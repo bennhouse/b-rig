@@ -95,7 +95,7 @@ On macOS the build signs the app (ad hoc, with its Info.plist), so the system re
 
 ### Installers and releases
 
-The repository's GitHub Actions workflow (`.github/workflows/b-rig.yml`) builds three installers: macOS Apple Silicon (`.dmg`, the app plus an Applications link), Windows x64 and Windows ARM64 (Inno Setup, `b-rig/Installer/b-rig.iss`). It runs by hand (Actions > b-rig > Run workflow, installers attached to the run) or when a tag like `b-rig-v0.2.0` is pushed, which also creates a release with the three files; the version comes from the tag. It does not run on every push, to save macOS minutes. Tests run on macOS and Windows x64.
+Three installers: macOS Apple Silicon (`.dmg`, the app plus an Applications link) and Windows x64 and ARM64 (Inno Setup, `b-rig/Installer/b-rig.iss`). `tools/release.sh b-rig 0.2.0` builds, tests and packages the macOS app on your Mac, then tags, pushes and creates the release with the `.dmg`. The tag starts the GitHub Actions workflow (`.github/workflows/b-rig.yml`), which builds and tests the Windows versions and adds their installers to the release; it can also be run by hand (Actions > b-rig > Run workflow). It does not run on every push, to save minutes.
 
 The macOS app is signed ad hoc, not notarized: the first time, open it from System Settings > Privacy & Security > "Open Anyway". On Windows the installers are unsigned, so SmartScreen asks for confirmation. The Windows build uses the static runtime, so no Visual C++ redistributable is needed.
 

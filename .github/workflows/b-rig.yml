@@ -1,8 +1,9 @@
-# b-rig: build, test e installer.
+# b-rig su Windows: build, test (x64) e installer per x64 e ARM64.
 #   - avvio manuale (Actions > b-rig > Run workflow): installer come artifact del run
-#   - tag b-rig-vX.Y.Z: in più una release (privata come il repo) con i tre installer. Il nome del tag è quello
-#     che legge il controllo aggiornamenti di app e plugin (<prodotto>-v<versione>, vedi shared/smp/Updates.h)
-# Non parte a ogni push: nei repo privati i minuti macOS valgono 10 volte quelli Linux.
+#   - tag b-rig-vX.Y.Z: gli installer Windows si aggiungono alla release
+# macOS si compila e si testa in locale: tools/release.sh fa la build, i test e il .dmg sul Mac, crea il tag e la
+# release; questa Action aggiunge solo Windows. Il nome del tag è quello che legge il controllo aggiornamenti.
+# Non parte a ogni push: nei repo privati i minuti Windows valgono il doppio.
 name: b-rig
 
 on:
@@ -21,47 +22,6 @@ env:
   DEFAULT_VERSION: "0.1.0"
 
 jobs:
-  macos:
-    name: macOS arm64
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Version
-        shell: bash
-        run: |
-          v="${GITHUB_REF_NAME#b-rig-v}"
-          [[ "$GITHUB_REF" == refs/tags/b-rig-v* ]] || v="$DEFAULT_VERSION"
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-
-      - name: Tools
-        run: brew list ninja >/dev/null 2>&1 || brew install ninja
-
-      - name: Configure
-        run: >
-          cmake -S b-rig -B b-rig/build -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_OSX_ARCHITECTURES=arm64
-          -DBRIG_VERSION=${{ env.VERSION }}
-
-      - name: Build
-        run: cmake --build b-rig/build --target BRig BRigTests
-
-      - name: Test
-        working-directory: b-rig
-        run: ./build/BRigTests_artefacts/Release/BRigTests
-
-      - name: Disk image
-        run: bash b-rig/Installer/make-dmg.sh "b-rig/build/BRig_artefacts/Release/b-rig.app" "$VERSION" dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: b-rig-macos-arm64
-          path: dist/*.dmg
-          if-no-files-found: error
-
   windows:
     name: Windows ${{ matrix.arch }}
     runs-on: windows-latest
@@ -125,23 +85,25 @@ jobs:
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/b-rig-v')
-    needs: [macos, windows]
+    needs: [windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/installer
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
+      # la release la crea di solito tools/release.sh con l'installer macOS (compilato in locale); qui si
+      # aggiungono gli installer Windows. Se non c'è ancora, la si crea.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${GITHUB_REF_NAME#b-rig-v}"
-          cat > notes.md <<'EOF'
-          Installers:
-          - **macOS (Apple Silicon)**: open the .dmg and drag b-rig to Applications. The app is not notarized: the first time, macOS blocks it. Open System Settings > Privacy & Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/b-rig.app`).
-          - **Windows x64 / ARM64**: run the setup for your machine. Windows SmartScreen may warn that the publisher is unknown: click "More info" > "Run anyway".
-          EOF
-          # beta: ogni release è una pre-release (il controllo aggiornamenti dell'app le considera, vedi shared/smp/Updates.h)
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "b-rig $v beta" --prerelease --notes-file notes.md
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "b-rig $v beta" --prerelease --notes-file tools/installer/notes-b-rig.md
+          gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber

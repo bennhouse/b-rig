@@ -1,9 +1,10 @@
-# Plugin della b-suite: build di tutti i plugin, test, installer.
+# Plugin della b-suite su Windows: build di tutti i plugin e installer VST3 per x64 e ARM64.
 #   - avvio manuale (Actions > b-suite > Run workflow): installer come artifact del run
-#   - tag b-suite-vX.Y.Z: in più una release (pre-release durante la beta) con i tre installer
-#     macOS (pkg universale, AU + VST3), Windows x64 e Windows ARM64 (VST3)
-# Tutti i plugin hanno la stessa versione (shared/cmake/Suite.cmake); il controllo aggiornamenti dei plugin legge
-# questi tag. Non parte a ogni push: nei repo privati i minuti macOS valgono 10 volte quelli Linux.
+#   - tag b-suite-vX.Y.Z: gli installer Windows si aggiungono alla release
+# macOS si compila e si testa in locale: tools/release.sh fa la build, i test e il .pkg sul Mac, crea il tag e la
+# release; questa Action aggiunge solo Windows (dal Mac non si compila per Windows). Tutti i plugin hanno la stessa
+# versione (shared/cmake/Suite.cmake); il controllo aggiornamenti dei plugin legge questi tag.
+# Non parte a ogni push: nei repo privati i minuti Windows valgono il doppio.
 name: b-suite
 
 on:
@@ -22,67 +23,6 @@ env:
   DEFAULT_VERSION: "0.1.0"
 
 jobs:
-  macos:
-    name: macOS (universal)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Version
-        shell: bash
-        run: |
-          v="${GITHUB_REF_NAME#b-suite-v}"
-          [[ "$GITHUB_REF" == refs/tags/b-suite-v* ]] || v="$DEFAULT_VERSION"
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-
-      - name: Tools
-        run: brew list ninja >/dev/null 2>&1 || brew install ninja
-
-      # cache dei file compilati tra una run e l'altra: si ricompila solo ciò che è cambiato (JUCE quasi mai)
-      - uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: b-suite-macos
-          max-size: 2G
-
-      - name: Configure
-        run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-          -DBSUITE_COPY_AFTER_BUILD=OFF
-          -DBSUITE_VERSION=${{ env.VERSION }}
-
-      - name: Build
-        run: cmake --build build --target bsuite_plugins bsuite_tests
-
-      - name: Test
-        shell: bash
-        run: |
-          failed=0
-          while read -r dir target; do
-            [[ -z "${dir:-}" || "$dir" == \#* ]] && continue
-            mkdir -p "$dir/build"
-            if (cd "$dir" && "../build/$dir/${target}Tests_artefacts/Release/${target}Tests" > test.log 2>&1); then
-              echo "ok      $dir"
-            else
-              echo "FAILED  $dir"; grep -E "FAIL" "$dir/test.log" || tail -20 "$dir/test.log"; failed=1
-            fi
-          done < tools/installer/plugins.txt
-          exit $failed
-
-      - name: Installer
-        run: bash tools/installer/make-suite-pkg.sh build "$VERSION" dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: b-suite-macos
-          path: dist/*.pkg
-          if-no-files-found: error
-
   windows:
     name: Windows ${{ matrix.arch }}
     runs-on: windows-latest
@@ -146,24 +86,25 @@ jobs:
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/b-suite-v')
-    needs: [macos, windows]
+    needs: [windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/installer
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
+      # la release la crea di solito tools/release.sh con l'installer macOS (compilato in locale); qui si
+      # aggiungono gli installer Windows. Se non c'è ancora, la si crea.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${GITHUB_REF_NAME#b-suite-v}"
-          cat > notes.md <<'EOF'
-          All the b-suite plugins in one installer.
-          - **macOS** (Apple Silicon and Intel): open the .pkg; Audio Unit and VST3 go to /Library/Audio/Plug-Ins. "Customise" lets you leave out plugins. The package is not notarized: the first time, macOS blocks it. Open System Settings > Privacy & Security and click "Open Anyway".
-          - **Windows x64 / ARM64**: run the setup for your machine; the VST3 plugins go to C:\Program Files\Common Files\VST3\b-suite. SmartScreen may warn that the publisher is unknown: click "More info" > "Run anyway".
-
-          Free software under the GNU AGPLv3.
-          EOF
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "b-suite $v beta" --prerelease --notes-file notes.md
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "b-suite $v beta" --prerelease --notes-file tools/installer/notes-b-suite.md
+          gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
