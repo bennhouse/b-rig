@@ -1,0 +1,139 @@
+# b-rig: build, test e installer.
+#   - avvio manuale (Actions > b-rig > Run workflow): installer come artifact del run
+#   - tag b-rig-vX.Y.Z: in più una release (privata come il repo) con i tre installer
+# Non parte a ogni push: nei repo privati i minuti macOS valgono 10 volte quelli Linux.
+name: b-rig
+
+on:
+  push:
+    tags: ["b-rig-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: b-rig-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEFAULT_VERSION: "0.1.0"
+
+jobs:
+  macos:
+    name: macOS arm64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Version
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#b-rig-v}"
+          [[ "$GITHUB_REF" == refs/tags/b-rig-v* ]] || v="$DEFAULT_VERSION"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Tools
+        run: brew list ninja >/dev/null 2>&1 || brew install ninja
+
+      - name: Configure
+        run: >
+          cmake -S b-rig -B b-rig/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DBRIG_VERSION=${{ env.VERSION }}
+
+      - name: Build
+        run: cmake --build b-rig/build --target BRig BRigTests
+
+      - name: Test
+        working-directory: b-rig
+        run: ./build/BRigTests_artefacts/Release/BRigTests
+
+      - name: Disk image
+        run: bash b-rig/Installer/make-dmg.sh "b-rig/build/BRig_artefacts/Release/b-rig.app" "$VERSION" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-rig-macos-arm64
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            test: true
+          - arch: arm64
+            cmake_arch: ARM64
+            test: false   # il runner è x64: l'eseguibile ARM64 si compila ma non si esegue
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Version
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#b-rig-v}"
+          [[ "$GITHUB_REF" == refs/tags/b-rig-v* ]] || v="$DEFAULT_VERSION"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake -S b-rig -B b-rig/build -A ${{ matrix.cmake_arch }} -DBRIG_VERSION=${{ env.VERSION }}
+
+      - name: Build
+        run: cmake --build b-rig/build --config Release --target BRig ${{ matrix.test && 'BRigTests' || '' }} -- /m
+
+      - name: Test
+        if: matrix.test
+        working-directory: b-rig
+        run: ./build/BRigTests_artefacts/Release/BRigTests.exe
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc /DAppVersion=$env:VERSION /DArch=${{ matrix.arch }} `
+            "/DSourceExe=$env:GITHUB_WORKSPACE\b-rig\build\BRig_artefacts\Release\b-rig.exe" `
+            "/DOutputDir=$env:GITHUB_WORKSPACE\dist" b-rig\Installer\b-rig.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-rig-windows-${{ matrix.arch }}
+          path: dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/b-rig-v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#b-rig-v}"
+          cat > notes.md <<'EOF'
+          Installers:
+          - **macOS (Apple Silicon)**: open the .dmg and drag b-rig to Applications. The app is not notarized: the first time, macOS blocks it. Open System Settings > Privacy & Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/b-rig.app`).
+          - **Windows x64 / ARM64**: run the setup for your machine. Windows SmartScreen may warn that the publisher is unknown: click "More info" > "Run anyway".
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "b-rig $v" --notes-file notes.md
