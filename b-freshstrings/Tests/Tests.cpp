@@ -102,6 +102,7 @@ int main()
         auto p = make<BFreshstringsProcessor> (1, 1);
         run (*p, 24000, [] (int i) { return strum (i % 12000, 0); });
         snapshot (*p, "b-freshstrings.png");
+        checkUpdates (*p, "b-freshstrings");
     }
     return finish();
 }

@@ -2,6 +2,7 @@
 // Controlli generici condivisi: checkbox (anche come meter), selettore a segmenti, box valore.
 #include "Theme.h"
 #include "About.h"
+#include "Updates.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace ui
@@ -168,8 +169,11 @@ inline void centreHeaderInRig (int editorWidth, std::vector<juce::Component*> co
 }
 
 // Logo premibile + pannello "about" (uguale in tutti i plugin): un clic sul logotipo in alto a sinistra apre
-// sopra a tutta la finestra una breve descrizione del plugin, la firma e "crafted in Italy, built with Claude".
-// Un clic ovunque (o Esc) lo chiude. Si aggancia all'editor da solo e ne segue le dimensioni.
+// sopra a tutta la finestra una breve descrizione del plugin, la firma, "crafted in Italy, built with Claude"
+// e la versione. Un clic ovunque (o Esc) lo chiude. Si aggancia all'editor da solo e ne segue le dimensioni.
+// Aggiornamenti (Updates.h): se c'è una versione più nuova compare un piccolo avviso nell'angolo in basso a
+// destra (un clic apre questo pannello, la x lo chiude) e resta un quadratino nel colore del plugin accanto al
+// logotipo; nel pannello la nuova versione e il tasto "download" che apre la pagina della release.
 class AboutOverlay final : public juce::Component, private juce::ComponentListener
 {
 public:
@@ -177,22 +181,41 @@ public:
     ~AboutOverlay() override;
     void show();
     void paint (juce::Graphics&) override;
-    void mouseDown (const juce::MouseEvent&) override { setVisible (false); }
+    void mouseDown (const juce::MouseEvent&) override;
     bool keyPressed (const juce::KeyPress& k) override { if (k == juce::KeyPress::escapeKey) { setVisible (false); return true; } return false; }
     std::function<juce::Colour()> titleColour;   // facoltativo: colore della "b" (es. b-amp, per canale)
     juce::Point<int> logoAt { 23, 16 };          // angolo del logotipo premibile (b-rig lo ha nella colonna della libreria)
+    void setLogoText (const juce::String& t) { if (t != logoText) { logoText = t; place(); } }   // nome più corto nel logotipo (b-fs)
+    void setUpdateForTest (const updates::Available& a) { setUpdate (a); }
+    bool toastVisibleForTest() const { return toast.isVisible(); }
+    void clickToastForTest (bool onClose);
 
 private:
     void componentMovedOrResized (juce::Component&, bool, bool) override;
     void place();
+    void setUpdate (const updates::Available&);
+    juce::Rectangle<int> downloadArea;   // tasto "download" nel pannello (vuoto se non c'è un aggiornamento)
     struct Hotspot final : juce::Component
     {
         AboutOverlay& owner;
         explicit Hotspot (AboutOverlay& o) : owner (o) { setMouseCursor (juce::MouseCursor::PointingHandCursor); setRepaintsOnMouseActivity (false); }
         void mouseDown (const juce::MouseEvent&) override { owner.show(); }
+        void paint (juce::Graphics&) override;
     } hotspot { *this };
+    // avviso nell'angolo in basso a destra: "update available" e la nuova versione
+    struct Toast final : juce::Component
+    {
+        AboutOverlay& owner;
+        explicit Toast (AboutOverlay& o) : owner (o) { setMouseCursor (juce::MouseCursor::PointingHandCursor); setRepaintsOnMouseActivity (true); }
+        juce::Rectangle<int> closeArea() const { return getLocalBounds().removeFromRight (34); }
+        void paint (juce::Graphics&) override;
+        void mouseDown (const juce::MouseEvent&) override;
+        juce::String line() const;
+    } toast { *this };
     juce::Component& ed;
-    juce::String name, text;
+    juce::String name, text, logoText;
+    updates::Available update;
+    std::unique_ptr<updates::Watcher> watcher;
 };
 
 } // namespace ui

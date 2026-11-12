@@ -95,5 +95,49 @@ inline void snapshot (juce::AudioProcessor& p, const char* file, std::function<v
     p.editorBeingDeleted (ed.get());   // come fa la DAW chiudendo la finestra: poi se ne può aprire un'altra
 }
 
+// Aggiornamenti: confronto delle versioni, lettura delle release di GitHub, quadratino accanto al logo e
+// pannello about con il tasto download (snapshot <file>_update.png e <file>_update_about.png).
+inline void checkUpdates (juce::AudioProcessor& p, const juce::String& file)
+{
+    using namespace ui::updates;
+    check (compareVersions ("0.10.0", "0.9.3") > 0 && compareVersions ("1.0", "1.0.0") == 0 && compareVersions ("0.1.0", "0.1.1") < 0,
+           "aggiornamenti: confronto delle versioni (numeri, non testo)");
+    const auto rel = juce::JSON::parse (R"([
+        { "tag_name": "b-rig-v0.2.0", "html_url": "https://github.com/x/y/releases/tag/b-rig-v0.2.0", "draft": false, "prerelease": true },
+        { "tag_name": "b-rig-v0.10.0", "html_url": "https://u/10", "draft": true, "prerelease": false },
+        { "tag_name": "b-rig-v0.1.5", "html_url": "https://u/15", "draft": false, "prerelease": false },
+        { "tag_name": "b-amp-v1.0.0", "html_url": "https://u/amp", "draft": false, "prerelease": false },
+        { "tag_name": "notes", "html_url": "https://u/n", "draft": false, "prerelease": false } ])");
+    const auto latest = latestPerProduct (rel);
+    check (latest["b-rig"]["version"].toString() == "0.2.0" && latest["b-amp"]["version"].toString() == "1.0.0" && ! latest.hasProperty ("notes"),
+           "aggiornamenti: versione più alta per prodotto (bozze escluse, pre-release incluse in beta)");
+
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditorAndMakeActive());
+    ui::AboutOverlay* about = nullptr;
+    for (auto* c : ed->getChildren()) if (auto* a = dynamic_cast<ui::AboutOverlay*> (c)) about = a;
+    check (about != nullptr, "aggiornamenti: pannello about trovato");
+    if (about == nullptr) return;
+    about->setUpdateForTest ({ "0.2.0", "https://github.com/x/y/releases/tag/b-0.2.0" });
+    for (int k = 0; k < 4; ++k) juce::MessageManager::getInstance()->runDispatchLoopUntil (35);
+    auto save = [&] (const juce::String& name)
+    {
+        auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f);
+        auto f = juce::File::getCurrentWorkingDirectory().getChildFile ("build").getChildFile (name);
+        f.deleteFile();
+        juce::FileOutputStream os (f);
+        check (os.openedOk() && juce::PNGImageFormat().writeImageToStream (img, os), name.toRawUTF8());
+    };
+    check (about->toastVisibleForTest(), "aggiornamenti: avviso nell'angolo quando c'è una versione nuova");
+    save (file + "_update.png");
+    about->clickToastForTest (false);
+    check (about->isVisible() && ! about->toastVisibleForTest(), "aggiornamenti: un clic sull'avviso apre il pannello about");
+    save (file + "_update_about.png");
+    about->setVisible (false);
+    about->setUpdateForTest ({ "0.2.0", "https://github.com/x/y/releases/tag/b-0.2.0" });
+    about->clickToastForTest (true);
+    check (! about->isVisible() && ! about->toastVisibleForTest(), "aggiornamenti: la x chiude l'avviso senza aprire il pannello");
+    p.editorBeingDeleted (ed.get());
+}
+
 inline int finish() { std::printf ("\n%s (%d falliti)\n", failures == 0 ? "TUTTI I TEST PASSATI" : "CI SONO TEST FALLITI", failures); return failures == 0 ? 0 : 1; }
 } // namespace tk

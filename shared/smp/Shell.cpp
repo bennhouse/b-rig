@@ -92,6 +92,7 @@ PixelCheckbox& ShellEditor::addHeaderCheck (const juce::String& caption, const c
 void ShellEditor::resized()
 {
     labels.clear();
+    if (about != nullptr) about->setLogoText (titleText);
     const auto b = box();
     const int left = b.getX() + 1 + kFramePad, right = b.getRight() - 1 - kFramePad;
     auto row = juce::Rectangle<int> (left, b.getY() + 1 + kFramePad, right - left, kControlH);

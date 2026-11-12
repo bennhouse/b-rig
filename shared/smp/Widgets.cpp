@@ -426,8 +426,71 @@ AboutOverlay::AboutOverlay (juce::Component& editor, const juce::String& n)
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     ed.addChildComponent (this);
     if (! kInRig) ed.addAndMakeVisible (hotspot);   // in b-rig il logo del plugin non c'è
+    ed.addChildComponent (toast);
     ed.addComponentListener (this);
     place();
+    // dentro b-rig i moduli non controllano: si aggiorna l'app intera
+    if (! kInRig)
+        watcher = std::make_unique<updates::Watcher> (ed, "b-" + name, [this] (const updates::Available& a) { setUpdate (a); });
+}
+
+void AboutOverlay::setUpdate (const updates::Available& a)
+{
+    update = a;
+    toast.setVisible (a.version.isNotEmpty() && ! isVisible());
+    place();
+    hotspot.repaint();
+    repaint();
+}
+
+void AboutOverlay::mouseDown (const juce::MouseEvent& e)
+{
+    if (! downloadArea.isEmpty() && downloadArea.contains (e.getPosition()) && update.url.startsWith ("https://"))
+        juce::URL (update.url).launchInDefaultBrowser();
+    setVisible (false);
+}
+
+// quadratino di aggiornamento: in alto a destra del logotipo, all'altezza delle maiuscole
+void AboutOverlay::Hotspot::paint (juce::Graphics& g)
+{
+    if (owner.update.version.isEmpty()) return;
+    const float w = logoWidth (owner.logoText.isNotEmpty() ? owner.logoText : owner.name);
+    const float capTop = baselineFor (18.0f, kLogoSize, Face::SansBold) - capHeight (kLogoSize, Face::SansBold);
+    g.setColour (owner.titleColour ? owner.titleColour() : accentOf (owner.ed));
+    g.fillRect (std::round (w + 5.0f), std::round (capTop), 6.0f, 6.0f);
+}
+
+juce::String AboutOverlay::Toast::line() const { return "b-" + owner.name + " " + updates::versionLabel (owner.update.version); }
+
+void AboutOverlay::Toast::paint (juce::Graphics& g)
+{
+    const auto col = owner.titleColour ? owner.titleColour() : accentOf (owner.ed);
+    const auto r = getLocalBounds().toFloat();
+    g.fillAll (background);
+    g.setColour (col); outline (g, r);
+    const auto body = getLocalBounds().withTrimmedRight (closeArea().getWidth()).reduced (14, 0);
+    const float mid = (float) getHeight() * 0.5f;
+    drawAtBaseline (g, "update available", (float) body.getX(), mid - 4.0f, info, kAxisSize, juce::Justification::left, Face::SansRegular);
+    drawAtBaseline (g, line(), (float) body.getX(), mid + 4.0f + capHeight (kInfoSize, Face::SansSemiBold), col, kInfoSize,
+                    juce::Justification::left, Face::SansSemiBold);
+    const auto c = closeArea().toFloat().getCentre();
+    const bool hot = closeArea().contains (getMouseXYRelative()) && isMouseOver();
+    g.setColour (hot ? labelHover : ui::text);
+    g.drawLine (c.x - 4.5f, c.y - 4.5f, c.x + 4.5f, c.y + 4.5f, 1.0f);
+    g.drawLine (c.x - 4.5f, c.y + 4.5f, c.x + 4.5f, c.y - 4.5f, 1.0f);
+}
+
+void AboutOverlay::Toast::mouseDown (const juce::MouseEvent& e)
+{
+    setVisible (false);
+    if (! closeArea().contains (e.getPosition())) owner.show();   // clic sull'avviso: il pannello about con il tasto download
+}
+
+void AboutOverlay::clickToastForTest (bool onClose)
+{
+    const auto p = onClose ? toast.closeArea().getCentre() : juce::Point<int> (10, 10);
+    toast.mouseDown (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p.toFloat(), {}, juce::MouseInputSource::defaultPressure,
+                                       0, 0, 0, 0, &toast, &toast, juce::Time::getCurrentTime(), p.toFloat(), juce::Time::getCurrentTime(), 1, false));
 }
 
 AboutOverlay::~AboutOverlay() { ed.removeComponentListener (this); }
@@ -437,13 +500,21 @@ void AboutOverlay::componentMovedOrResized (juce::Component&, bool, bool) { plac
 void AboutOverlay::place()
 {
     setBounds (ed.getLocalBounds());
-    hotspot.setBounds (logoAt.x, logoAt.y, (int) std::ceil (logoWidth (name)) + 4, 36);
+    const float lw = logoWidth (logoText.isNotEmpty() ? logoText : name);
+    hotspot.setBounds (logoAt.x, logoAt.y, (int) std::ceil (lw) + (update.version.isNotEmpty() ? 14 : 4), 36);
     hotspot.toFront (false);
+    {
+        const int tw = juce::jmax (150, (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, kInfoSize), toast.line()))) + 28 + 34;
+        const auto eb = ed.getLocalBounds().reduced (16);
+        toast.setBounds (eb.getRight() - tw, eb.getBottom() - 52, tw, 52);
+        toast.toFront (false);
+    }
     if (isVisible()) toFront (true);
 }
 
 void AboutOverlay::show()
 {
+    toast.setVisible (false);   // l'avviso ha fatto il suo lavoro: resta il quadratino accanto al logo
     place();
     setVisible (true);
     toFront (true);
@@ -461,7 +532,8 @@ void AboutOverlay::paint (juce::Graphics& g)
     body.setLineSpacing (5.0f);
     body.append (text, face (Face::SansRegular, 15.0f), labelHover);
     juce::TextLayout tl; tl.createLayout (body, w);
-    const float blockH = 48.0f + tl.getHeight() + 34.0f + 70.0f;
+    const bool hasUpdate = update.version.isNotEmpty();
+    const float blockH = 48.0f + tl.getHeight() + 34.0f + 70.0f + (hasUpdate ? 52.0f : 0.0f);
     float y = juce::jmax (24.0f, ((float) getHeight() - blockH) * 0.5f);
     drawTitleAlways (g, name, juce::Rectangle<float> (x - 1.0f, y, w, 36.0f).toNearestInt(), kLogoSize, col);
     y += 48.0f;
@@ -481,6 +553,21 @@ void AboutOverlay::paint (juce::Graphics& g)
     put ("b", Face::SansBold, col, 18.0f); put ("-", Face::SansLight, titleDash, 18.0f); put ("suite", Face::SansMedium, titleName, 18.0f);
     y += 24.0f;
     drawAtBaseline (g, juce::String (juce::CharPointer_UTF8 ("crafted in Italy  \xc2\xb7  built with Claude")), x, y, info, kInfoSize, juce::Justification::left, Face::SansRegular);
+    if (const auto v = updates::versionLabel (updates::currentVersion()); v.isNotEmpty())
+        drawAtBaseline (g, "version " + v, x + w, y, info, kInfoSize, juce::Justification::right, Face::MonoRegular);
+    downloadArea = {};
+    if (hasUpdate)
+    {
+        // nuova versione: testo nel colore del plugin e un tasto pieno che apre la pagina della release
+        y += 34.0f;
+        const auto msg = "b-" + name + " " + updates::versionLabel (update.version) + " is available";
+        const auto bf = face (Face::SansSemiBold, kControlTextSize);
+        const int bw = (int) std::ceil (juce::GlyphArrangement::getStringWidth (bf, "download")) + 24;
+        downloadArea = { juce::roundToInt (x + w) - bw, juce::roundToInt (y - capHeight (kControlTextSize, Face::SansSemiBold) * 0.5f) - kControlH / 2, bw, kControlH };
+        drawAtBaseline (g, msg, x, baselineFor ((float) downloadArea.getCentreY(), kInfoSize, Face::SansMedium), col, kInfoSize, juce::Justification::left, Face::SansMedium);
+        g.setColour (col); g.fillRect (downloadArea);
+        drawLabel (g, "download", downloadArea, onAccent, kControlTextSize, juce::Justification::centred, Face::SansSemiBold);
+    }
     drawAtBaseline (g, "click anywhere to close", (float) getWidth() * 0.5f, (float) getHeight() - 16.0f, info, kAxisSmall,
                     juce::Justification::horizontallyCentred, Face::SansRegular);
 }

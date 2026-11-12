@@ -1,6 +1,7 @@
 # b-rig: build, test e installer.
 #   - avvio manuale (Actions > b-rig > Run workflow): installer come artifact del run
-#   - tag b-rig-vX.Y.Z: in più una release (privata come il repo) con i tre installer
+#   - tag b-rig-vX.Y.Z: in più una release (privata come il repo) con i tre installer. Il nome del tag è quello
+#     che legge il controllo aggiornamenti di app e plugin (<prodotto>-v<versione>, vedi shared/smp/Updates.h)
 # Non parte a ogni push: nei repo privati i minuti macOS valgono 10 volte quelli Linux.
 name: b-rig
 
@@ -136,4 +137,5 @@ jobs:
           - **macOS (Apple Silicon)**: open the .dmg and drag b-rig to Applications. The app is not notarized: the first time, macOS blocks it. Open System Settings > Privacy & Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/b-rig.app`).
           - **Windows x64 / ARM64**: run the setup for your machine. Windows SmartScreen may warn that the publisher is unknown: click "More info" > "Run anyway".
           EOF
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "b-rig $v" --notes-file notes.md
+          # beta: ogni release è una pre-release (il controllo aggiornamenti dell'app le considera, vedi shared/smp/Updates.h)
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "b-rig $v beta" --prerelease --notes-file notes.md

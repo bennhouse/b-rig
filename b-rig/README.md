@@ -76,6 +76,10 @@ Stored in `~/Library/Application Support/b-suite/b-rig/Presets` (`.brig` files: 
 - Metronome: beep, hat and wood play; starts at 50 % volume.
 - Audio-thread CPU, factory chain with b-amp armed: about 2 % of one core.
 
+## Updates
+
+The about panel shows the version (the whole b-suite is in beta). Once a day at most, while the window is open, b-rig asks the b-suite GitHub releases whether there is a newer version. The answer is shared with the b-suite plugins, so they make one request a day between them. If there is one, a small notice appears in the bottom-right corner ("update available" and the new version). Clicking it opens the about panel, where a `download` button opens the release page; its x closes it. A small square in b-rig's colour stays next to the logo, so the update can still be found from the logo. The request is anonymous and carries no data about you. Offline or with the releases unreachable, nothing is shown. The modules inside b-rig never check on their own: b-rig updates as one app.
+
 ## Build
 
 CMake ≥ 3.22, a C++20 compiler and JUCE 9 (`../libs/JUCE`, downloaded if missing). The plugin folders must sit next to `b-rig`, as in this repo.
