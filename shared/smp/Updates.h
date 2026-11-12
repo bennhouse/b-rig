@@ -2,7 +2,7 @@
 // Controllo degli aggiornamenti, uguale per b-rig e per tutti i plugin.
 //
 // Le versioni pubblicate sono le release del repository GitHub (kUpdateRepo), con un tag per prodotto:
-// "b-rig-v0.2.0", "b-amp-v0.1.3"... Una sola richiesta all'API delle release restituisce tutti i prodotti:
+// "b-rig-v0.2.0" per l'app, "b-suite-v0.2.0" per tutti i plugin (un solo installer, una sola versione). Una sola richiesta all'API delle release restituisce tutti i prodotti:
 // il risultato si salva in "b-suite/updates.settings" (condiviso tra app e plugin, anche in processi diversi)
 // e la richiesta si ripete al massimo una volta ogni 24 ore. Durante la beta contano anche le pre-release.
 //

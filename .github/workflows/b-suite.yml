@@ -1,0 +1,159 @@
+# Plugin della b-suite: build di tutti i plugin, test, installer.
+#   - avvio manuale (Actions > b-suite > Run workflow): installer come artifact del run
+#   - tag b-suite-vX.Y.Z: in più una release (pre-release durante la beta) con i tre installer
+#     macOS (pkg universale, AU + VST3), Windows x64 e Windows ARM64 (VST3)
+# Tutti i plugin hanno la stessa versione (shared/cmake/Suite.cmake); il controllo aggiornamenti dei plugin legge
+# questi tag. Non parte a ogni push: nei repo privati i minuti macOS valgono 10 volte quelli Linux.
+name: b-suite
+
+on:
+  push:
+    tags: ["b-suite-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: b-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEFAULT_VERSION: "0.1.0"
+
+jobs:
+  macos:
+    name: macOS (universal)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Version
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#b-suite-v}"
+          [[ "$GITHUB_REF" == refs/tags/b-suite-v* ]] || v="$DEFAULT_VERSION"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Tools
+        run: brew list ninja >/dev/null 2>&1 || brew install ninja
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DBSUITE_COPY_AFTER_BUILD=OFF
+          -DBSUITE_VERSION=${{ env.VERSION }}
+
+      - name: Build
+        run: cmake --build build --target bsuite_plugins bsuite_tests
+
+      - name: Test
+        shell: bash
+        run: |
+          failed=0
+          while read -r dir target; do
+            [[ -z "${dir:-}" || "$dir" == \#* ]] && continue
+            mkdir -p "$dir/build"
+            if (cd "$dir" && "../build/$dir/${target}Tests_artefacts/Release/${target}Tests" > test.log 2>&1); then
+              echo "ok      $dir"
+            else
+              echo "FAILED  $dir"; grep -E "FAIL" "$dir/test.log" || tail -20 "$dir/test.log"; failed=1
+            fi
+          done < tools/installer/plugins.txt
+          exit $failed
+
+      - name: Installer
+        run: bash tools/installer/make-suite-pkg.sh build "$VERSION" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-suite-macos
+          path: dist/*.pkg
+          if-no-files-found: error
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash   # PowerShell spezzerebbe -DBSUITE_VERSION=0.1.0 sul punto
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+          - arch: arm64
+            cmake_arch: ARM64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Version
+        run: |
+          v="${GITHUB_REF_NAME#b-suite-v}"
+          [[ "$GITHUB_REF" == refs/tags/b-suite-v* ]] || v="$DEFAULT_VERSION"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake -S . -B build -A ${{ matrix.cmake_arch }} -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_VERSION=${{ env.VERSION }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target bsuite_plugins
+
+      - name: Collect
+        run: |
+          mkdir -p vst3
+          while read -r dir target; do
+            [[ -z "${dir:-}" || "$dir" == \#* ]] && continue
+            cp -R "build/$dir/${target}_artefacts/Release/VST3/$dir.vst3" vst3/
+          done < tools/installer/plugins.txt
+          ls vst3
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc /DAppVersion=$env:VERSION /DArch=${{ matrix.arch }} `
+            "/DSourceDir=$env:GITHUB_WORKSPACE\vst3" `
+            "/DOutputDir=$env:GITHUB_WORKSPACE\dist" tools\installer\b-suite.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-suite-windows-${{ matrix.arch }}
+          path: dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/b-suite-v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#b-suite-v}"
+          cat > notes.md <<'EOF'
+          All the b-suite plugins in one installer.
+          - **macOS** (Apple Silicon and Intel): open the .pkg; Audio Unit and VST3 go to /Library/Audio/Plug-Ins. "Customise" lets you leave out plugins. The package is not notarized: the first time, macOS blocks it. Open System Settings > Privacy & Security and click "Open Anyway".
+          - **Windows x64 / ARM64**: run the setup for your machine; the VST3 plugins go to C:\Program Files\Common Files\VST3\b-suite. SmartScreen may warn that the publisher is unknown: click "More info" > "Run anyway".
+
+          Free software under the GNU AGPLv3.
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "b-suite $v beta" --prerelease --notes-file notes.md

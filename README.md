@@ -8,7 +8,7 @@ Use them, study them, change them, ship your own versions. Everything is here: t
 
 ## What you get
 
-- 20 plugins and a standalone app that runs them without a DAW.
+- 19 plugins and a standalone app that runs them without a DAW.
 - Each plugin does one job and shows what it is doing on a live display. No fake knobs or screws: dark, flat, one colour per plugin.
 - Readable code: one folder per plugin, a short `README.md` with every control and the numbers measured by its tests.
 - A shared design system in `shared/smp` (fonts, colours, controls, window layout), so a new plugin looks like the rest from the first build.

@@ -1,28 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)  # universale
-endif()
+# versione della suite, architetture macOS, opzioni del compilatore e JUCE: comuni a tutti i plugin
+include("${CMAKE_CURRENT_LIST_DIR}/../shared/cmake/Suite.cmake")
+project(BAftercab VERSION ${BSUITE_VERSION} LANGUAGES C CXX)
+bsuite_setup()
 
-project(BAftercab VERSION 0.1.0 LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# JUCE: copia condivisa in "Self Made Plugins/libs/JUCE", altrimenti (es. sulla CI) la scarica.
-set(SMP_JUCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libs/JUCE")
-if(EXISTS "${SMP_JUCE_DIR}/CMakeLists.txt")
-    add_subdirectory("${SMP_JUCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
-else()
-    include(FetchContent)
-    FetchContent_Declare(JUCE
-        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-        GIT_TAG 9.0.5
-        GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(JUCE)
-endif()
-
-option(BAFTERCAB_COPY_AFTER_BUILD "Installa il plugin nelle cartelle di sistema dopo la build" ON)
 
 juce_add_plugin(BAftercab
     COMPANY_NAME "b-suite"
@@ -37,7 +19,7 @@ juce_add_plugin(BAftercab
     IS_MIDI_EFFECT FALSE
     AU_MAIN_TYPE kAudioUnitType_Effect
     VST3_CATEGORIES Fx Tools
-    COPY_PLUGIN_AFTER_BUILD ${BAFTERCAB_COPY_AFTER_BUILD}
+    COPY_PLUGIN_AFTER_BUILD ${BSUITE_COPY_AFTER_BUILD}
     NEEDS_WEB_BROWSER FALSE
     NEEDS_CURL FALSE)
 

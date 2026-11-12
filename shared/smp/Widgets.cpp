@@ -642,7 +642,7 @@ AboutOverlay::AboutOverlay (juce::Component& editor, const juce::String& n)
     place();
     // dentro b-rig i moduli non controllano: si aggiorna l'app intera
     if (! kInRig)
-        watcher = std::make_unique<updates::Watcher> (ed, "b-" + name, [this] (const updates::Available& a) { setUpdate (a); });
+        watcher = std::make_unique<updates::Watcher> (ed, product(), [this] (const updates::Available& a) { setUpdate (a); });
 }
 
 void AboutOverlay::setUpdate (const updates::Available& a)
@@ -671,7 +671,7 @@ void AboutOverlay::Hotspot::paint (juce::Graphics& g)
     g.fillRect (std::round (w + 5.0f), std::round (capTop), 6.0f, 6.0f);
 }
 
-juce::String AboutOverlay::Toast::line() const { return "b-" + owner.name + " " + updates::versionLabel (owner.update.version); }
+juce::String AboutOverlay::Toast::line() const { return owner.product() + " " + updates::versionLabel (owner.update.version); }
 
 void AboutOverlay::Toast::paint (juce::Graphics& g)
 {
@@ -771,7 +771,7 @@ void AboutOverlay::paint (juce::Graphics& g)
     {
         // nuova versione: testo nel colore del plugin e un tasto pieno che apre la pagina della release
         y += 34.0f;
-        const auto msg = "b-" + name + " " + updates::versionLabel (update.version) + " is available";
+        const auto msg = product() + " " + updates::versionLabel (update.version) + " is available";
         const auto bf = face (Face::SansSemiBold, kControlTextSize);
         const int bw = (int) std::ceil (juce::GlyphArrangement::getStringWidth (bf, "download")) + 24;
         downloadArea = { juce::roundToInt (x + w) - bw, juce::roundToInt (y - capHeight (kControlTextSize, Face::SansSemiBold) * 0.5f) - kControlH / 2, bw, kControlH };

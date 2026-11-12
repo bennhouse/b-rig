@@ -1,0 +1,21 @@
+# I plugin della suite, in ordine di catena: cartella, target CMake. Lo leggono il CMakeLists.txt della radice
+# e gli script degli installer.
+b-drop BDrop
+b-focus BFocus
+b-freshstrings BFreshstrings
+b-tight BTight
+b-wire BWire
+b-starve BStarve
+b-distort BDistort
+b-amp BAmp
+b-blend BBlend
+b-double BDouble
+b-aftercab BAftercab
+b-dynaverb BDynaverb
+b-delay BDelay
+b-verb BVerb
+b-space BSpace
+b-scenery BScenery
+b-adapt BAdapt
+b-meter BMeter
+b-synthesia BSynthesia
