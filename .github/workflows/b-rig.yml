@@ -94,7 +94,10 @@ jobs:
         run: cmake -S b-rig -B b-rig/build -A ${{ matrix.cmake_arch }} -DBRIG_VERSION=${{ env.VERSION }}
 
       - name: Build
-        run: cmake --build b-rig/build --config Release --target BRig ${{ matrix.test && 'BRigTests' || '' }} -- /m
+        run: |
+          targets="BRig"
+          [[ "${{ matrix.test }}" == "true" ]] && targets="BRig BRigTests"
+          cmake --build b-rig/build --config Release --parallel --target $targets
 
       - name: Test
         if: matrix.test
