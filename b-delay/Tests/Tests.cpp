@@ -58,7 +58,7 @@ int main()
     // 4. tap: tre click a 500 ms di distanza -> 500 ms (e sync spento)
     {
         auto p = mk ({ { BDelayIDs::sync, 1.0f } });
-        for (int k = 0; k < 3; ++k) { p->tap(); if (k < 2) juce::Thread::sleep (500); }
+        for (int k = 0; k < 3; ++k) p->tapAt (1000.0 + 500.0 * k);   // orari dati: il test non dipende dalla velocità della macchina
         auto* t = p->apvts.getParameter (BDelayIDs::time);
         const float ms = t->convertFrom0to1 (t->getValue());
         std::printf ("       tap a 500 ms: %.1f ms\n", ms);

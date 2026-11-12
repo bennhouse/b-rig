@@ -78,6 +78,7 @@ public:
     // tempo del canale sinistro (ms) dai parametri e dal tempo del brano
     static float leftMs (float timeMs, bool sync, int division, double bpm) noexcept;
     void tap();                                               // message thread: un click su tap
+    void tapAt (double nowMs);                                // lo stesso con l'ora data (test)
 
     // per il grafico
     std::atomic<double> bpmNow { 120.0 };

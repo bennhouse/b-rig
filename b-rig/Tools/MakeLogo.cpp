@@ -156,70 +156,118 @@ Scene icon()
 }
 }
 
-// Vetrina a schermo intero: le schermate dei plugin incastrate in righe giustificate (ogni riga riempie la larghezza,
-// le immagini mantengono le proporzioni), margini uguali, sfondo che sfuma dall'alto verso il basso.
-//   BSuiteLogo --showcase uscita.png larghezza altezza img1.png img2.png ...
+// Vetrina a schermo intero: le schermate dei plugin a mosaico (righe giustificate: ogni riga riempie la larghezza e
+// le immagini mantengono le proporzioni), margini uguali, sfondo grigio come quello dei plugin.
+//   BSuiteLogo --showcase uscita.png larghezza altezza [--logo] img1.png img2.png ...
+// Con --logo i plugin stanno intorno al logotipo b-suite, al centro della riga di mezzo.
 int showcase (int argc, char** argv)
 {
     const auto cwd = juce::File::getCurrentWorkingDirectory();
     const auto out = cwd.getChildFile (argv[2]);
     const int W = juce::String (argv[3]).getIntValue(), H = juce::String (argv[4]).getIntValue();
+    int first = 5;
+    const bool withLogo = argc > 5 && juce::String (argv[5]) == "--logo";
+    if (withLogo) ++first;
     std::vector<juce::Image> imgs;
-    for (int i = 5; i < argc; ++i)
+    for (int i = first; i < argc; ++i)
     {
         auto im = juce::ImageFileFormat::loadFrom (cwd.getChildFile (argv[i]));
         if (im.isValid()) imgs.push_back (im); else std::printf ("salto %s\n", argv[i]);
     }
     if (imgs.empty()) return 1;
-    const float margin = (float) W * 0.035f, gap = (float) W * 0.009f;
+    const float margin = (float) W * 0.03f, gap = (float) W * 0.008f;
     const float availW = (float) W - 2.0f * margin, availH = (float) H - 2.0f * margin;
+    constexpr int kLogo = -1;   // la casella del logo nel mosaico
+    constexpr float kLogoAspect = 2.4f;
+    auto aspect = [&] (int i) { return i == kLogo ? kLogoAspect : (float) imgs[(size_t) i].getWidth() / (float) imgs[(size_t) i].getHeight(); };
     const int n = (int) imgs.size();
-    auto aspect = [&] (int i) { return (float) imgs[(size_t) i].getWidth() / (float) imgs[(size_t) i].getHeight(); };
-    // righe: per ogni numero di righe si dividono le immagini (in ordine) con somme di proporzioni simili,
-    // ogni riga alta quanto serve per riempire la larghezza; si sceglie l'altezza totale più vicina allo spazio
+
+    // righe: con il logo, un numero dispari di righe con lo stesso numero di plugin e il logo al centro di quella di
+    // mezzo; senza, la divisione in righe con le proporzioni più simili e l'altezza più vicina allo spazio
     std::vector<std::vector<int>> best; float bestErr = 1.0e9f;
-    for (int rows = 2; rows <= 7; ++rows)
+    auto rowHeight = [&] (const std::vector<int>& r) { float sa = 0; for (int i : r) sa += aspect (i); return (availW - gap * (float) (r.size() - 1)) / sa; };
+    auto evaluate = [&] (const std::vector<std::vector<int>>& part)
     {
-        float total = 0; for (int i = 0; i < n; ++i) total += aspect (i);
-        std::vector<std::vector<int>> part (1);
-        float acc = 0;
-        for (int i = 0; i < n; ++i)
-        {
-            const float a = aspect (i);
-            if (! part.back().empty() && (int) part.size() < rows && acc + a * 0.5f > total / (float) rows * (float) part.size())
-                part.emplace_back();
-            part.back().push_back (i); acc += a;
-        }
-        float h = 0;
-        for (auto& r : part) { float sa = 0; for (int i : r) sa += aspect (i); h += (availW - gap * (float) (r.size() - 1)) / sa; }
-        h += gap * (float) (part.size() - 1);
-        const float err = h > availH ? (h - availH) * 1.5f : availH - h;   // meglio un po' più piccolo che tagliato
+        float h = gap * (float) (part.size() - 1);
+        for (auto& r : part) h += rowHeight (r);
+        const float err = h > availH ? (h - availH) * 1.5f : availH - h;
         if (err < bestErr) { bestErr = err; best = part; }
+    };
+    if (withLogo)
+    {
+        for (int rows : { 3, 5, 7 })
+        {
+            std::vector<std::vector<int>> part ((size_t) rows);
+            int i = 0;
+            for (int r = 0; r < rows; ++r)
+            {
+                const int take = (n - i) / (rows - r);   // plugin rimasti divisi in parti uguali
+                for (int k = 0; k < take; ++k)
+                {
+                    if (r == rows / 2 && k == take / 2) part[(size_t) r].push_back (kLogo);
+                    part[(size_t) r].push_back (i++);
+                }
+                if (r == rows / 2 && take == 0) part[(size_t) r].push_back (kLogo);
+            }
+            evaluate (part);
+        }
     }
-    // scala unica se le righe non entrano in altezza, poi tutto centrato
-    std::vector<float> rowH; float totalH = 0;
-    for (auto& r : best) { float sa = 0; for (int i : r) sa += aspect (i); rowH.push_back ((availW - gap * (float) (r.size() - 1)) / sa); totalH += rowH.back(); }
-    totalH += gap * (float) (best.size() - 1);
-    const float k = juce::jmin (1.0f, availH / totalH);
+    else
+    {
+        for (int rows = 2; rows <= 7; ++rows)
+        {
+            float total = 0; for (int i = 0; i < n; ++i) total += aspect (i);
+            std::vector<std::vector<int>> part (1);
+            float acc = 0;
+            for (int i = 0; i < n; ++i)
+            {
+                const float a = aspect (i);
+                if (! part.back().empty() && (int) part.size() < rows && acc + a * 0.5f > total / (float) rows * (float) part.size())
+                    part.emplace_back();
+                part.back().push_back (i); acc += a;
+            }
+            evaluate (part);
+        }
+    }
+    std::vector<float> rowH; float totalH = gap * (float) (best.size() - 1);
+    for (auto& r : best) { rowH.push_back (rowHeight (r)); totalH += rowH.back(); }
+    const float k = juce::jmin (1.0f, availH / totalH);   // una scala sola se non entra in altezza, poi tutto centrato
+
     juce::Image canvas (juce::Image::RGB, W, H, true);
     {
         juce::Graphics g (canvas);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a2a2a), 0.0f, 0.0f, juce::Colour (0xff080808), 0.0f, (float) H, false));
-        g.fillAll();
+        g.fillAll (ui::background);
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         float y = ((float) H - totalH * k) * 0.5f;
         for (size_t r = 0; r < best.size(); ++r)
         {
             const float h = rowH[r] * k;
-            float rowW = 0; for (int i : best[r]) rowW += aspect (i) * h;
-            rowW += gap * (float) (best[r].size() - 1);
+            float rowW = gap * (float) (best[r].size() - 1);
+            for (int i : best[r]) rowW += aspect (i) * h;
             float x = ((float) W - rowW) * 0.5f;
             for (int i : best[r])
             {
                 const auto dst = juce::Rectangle<float> (x, y, aspect (i) * h, h);
-                juce::DropShadow (juce::Colours::black.withAlpha (0.45f), (int) (gap * 1.2f), { 0, (int) (gap * 0.3f) }).drawForRectangle (g, dst.toNearestInt());
-                g.drawImage (imgs[(size_t) i], dst);
-                g.setColour (juce::Colour (0xff2a2a2a)); g.drawRect (dst, 1.0f);
+                if (i == kLogo)
+                {
+                    // logotipo b-suite, senza i quadratini: b e nome chiari, trattino grigio
+                    juce::Path pb, pd, pn;
+                    const float size = dst.getHeight() * 0.42f;
+                    float tx = 0.0f;
+                    tx += textPath (pb, "b", ui::Face::SansBold, size, tx);
+                    tx += textPath (pd, "-", ui::Face::SansLight, size, tx);
+                    textPath (pn, "suite", ui::Face::SansMedium, size, tx, -0.02f);
+                    juce::Path all; all.addPath (pb); all.addPath (pd); all.addPath (pn);
+                    const auto ink = all.getBounds();
+                    const auto t = juce::AffineTransform::translation (dst.getCentreX() - ink.getCentreX(), dst.getCentreY() - ink.getCentreY());
+                    g.setColour (ui::titleName); g.fillPath (pb, t); g.fillPath (pn, t);
+                    g.setColour (ui::titleDash); g.fillPath (pd, t);
+                }
+                else
+                {
+                    g.drawImage (imgs[(size_t) i], dst);
+                    g.setColour (ui::separator); g.drawRect (dst.expanded (1.0f), 1.0f);   // il bordo separa le schermate dal fondo
+                }
                 x += dst.getWidth() + gap;
             }
             y += h + gap;
@@ -228,7 +276,7 @@ int showcase (int argc, char** argv)
     out.deleteFile();
     juce::FileOutputStream os (out);
     const bool ok = os.openedOk() && juce::PNGImageFormat().writeImageToStream (canvas, os);
-    std::printf ("%s %s (%d immagini, %d righe)\n", ok ? "scritto" : "ERRORE", out.getFullPathName().toRawUTF8(), n, (int) best.size());
+    std::printf ("%s %s (%d immagini, %d righe%s)\n", ok ? "scritto" : "ERRORE", out.getFullPathName().toRawUTF8(), n, (int) best.size(), withLogo ? ", logo" : "");
     return ok ? 0 : 1;
 }
 

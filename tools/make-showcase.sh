@@ -1,7 +1,9 @@
 #!/bin/bash
-# Vetrina della suite (docs/b-suite-showcase.png, 3840 x 2160): le schermate dei test di ogni plugin, in ordine di
-# catena, incastrate su uno sfondo che sfuma dall'alto verso il basso. Prima compila i plugin e lancia i loro test
-# (scrivono le schermate in <plugin>/build), poi lo strumento BSuiteLogo di b-rig.
+# Vetrine della suite, 3840 x 2160 sul grigio dei plugin, con le schermate dei test di ogni plugin in ordine di catena:
+#   docs/b-suite-showcase.png       i plugin a mosaico intorno al logotipo b-suite
+#   docs/b-suite-showcase-all.png   solo i plugin a mosaico
+# Prima compila i plugin e lancia i loro test (scrivono le schermate in <plugin>/build), poi lo strumento BSuiteLogo
+# di b-rig.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tool=b-rig/build/BSuiteLogo_artefacts/Release/BSuiteLogo
@@ -28,4 +30,5 @@ shots=(
     b-synthesia/build/gui_bsyn_tunnel.png
     b-rig/build/gui_brig_default.png
 )
-"$tool" --showcase docs/b-suite-showcase.png 3840 2160 "${shots[@]}"
+"$tool" --showcase docs/b-suite-showcase.png 3840 2160 --logo "${shots[@]}"
+"$tool" --showcase docs/b-suite-showcase-all.png 3840 2160 "${shots[@]}"

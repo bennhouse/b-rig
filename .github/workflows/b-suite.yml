@@ -110,6 +110,7 @@ jobs:
         run: |
           mkdir -p vst3
           while read -r dir target; do
+            target="${target%$'\r'}"   # Git su Windows può dare fine riga CRLF
             [[ -z "${dir:-}" || "$dir" == \#* ]] && continue
             cp -R "build/$dir/${target}_artefacts/Release/VST3/$dir.vst3" vst3/
           done < tools/installer/plugins.txt

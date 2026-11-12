@@ -78,9 +78,10 @@ bool BDelayProcessor::isBusesLayoutSupported (const BusesLayout& l) const
     return (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo()) && out == juce::AudioChannelSet::stereo();
 }
 
-void BDelayProcessor::tap()
+void BDelayProcessor::tap() { tapAt (juce::Time::getMillisecondCounterHiRes()); }
+
+void BDelayProcessor::tapAt (double now)
 {
-    const double now = juce::Time::getMillisecondCounterHiRes();
     if (! taps.empty() && now - taps.back() > 2500.0) taps.clear();   // pausa lunga: si ricomincia
     taps.push_back (now);
     if (taps.size() > 4) taps.erase (taps.begin());

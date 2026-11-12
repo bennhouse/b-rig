@@ -15,7 +15,7 @@ Use them, study them, change them, ship your own versions. Everything is here: t
 
 The code was written with Claude Code, and so can your changes: the repository is laid out so that a person or an AI assistant can find their way around quickly.
 
-<p align="center"><img src="docs/b-suite-showcase.png" alt="All the b-suite plugins" width="100%"></p>
+<p align="center"><img src="docs/b-suite-showcase-all.png" alt="All the b-suite plugins" width="100%"></p>
 
 ## The plugins
 
@@ -97,10 +97,13 @@ b-suite is free software under the [GNU Affero General Public License v3](LICENS
 
 ## Releases and updates
 
-- Releases are on the GitHub releases page, one tag per product: `b-rig-v0.2.0`, `b-amp-v0.1.3`... During the beta they are marked as pre-releases.
-- To publish a new b-rig version: `tools/release.sh b-rig 0.2.0`. It sets the version, tags it and pushes; GitHub builds the installers for macOS and Windows and publishes the release.
-- b-rig and the plugins check for a new version once a day. If there is one, a small notice shows up in the corner; click it and the about panel opens with a download button. The check is an anonymous request to the GitHub releases.
+- Two products, each with its own tag and installers on the GitHub releases page (pre-releases during the beta):
+  - **b-suite** (`b-suite-v0.2.0`): every plugin in one installer, all with the same version. macOS: a universal `.pkg` with Audio Unit and VST3, where "Customise" lets you leave plugins out. Windows x64 and ARM64: a VST3 setup with one component per plugin.
+  - **b-rig** (`b-rig-v0.2.0`): the standalone app, for macOS (Apple Silicon) and Windows (x64 and ARM64).
+- To publish: `tools/release.sh b-suite 0.2.0` or `tools/release.sh b-rig 0.2.0`. It sets the version, tags it and pushes; GitHub builds, tests and publishes the release.
+- To build every plugin at once locally: `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` then `cmake --build build --target bsuite_plugins`.
+- b-rig checks for new b-rig releases, the plugins for new b-suite releases, once a day. If there is one, a small notice shows up in the corner; click it and the about panel opens with a download button. The check is an anonymous request to the GitHub releases.
 
 ## Logo and images
 
-`docs/` has the logo in three sizes (the banner above, a full-screen version at 1920 × 1080 and a square icon at 1024 × 1024, one square per plugin in the order of the chain) and the showcase with every plugin (3840 × 2160). All of them are generated: the logos by `BSuiteLogo` in b-rig, the showcase by `tools/make-showcase.sh` from the screenshots the tests save. Use them freely.
+`docs/` has the logo in three sizes (the banner above, a full-screen version at 1920 × 1080 and a square icon at 1024 × 1024, one square per plugin in the order of the chain) and two showcases at 3840 × 2160: every plugin around the b-suite logo (`b-suite-showcase.png`, good as the repository's social preview) and every plugin on its own (`b-suite-showcase-all.png`). All of them are generated: the logos by `BSuiteLogo` in b-rig, the showcases by `tools/make-showcase.sh` from the screenshots the tests save. Use them freely.

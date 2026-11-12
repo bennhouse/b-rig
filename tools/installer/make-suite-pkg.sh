@@ -21,6 +21,7 @@ pack ()   # bundle, cartella d'installazione, identificativo, nome del .pkg
 }
 
 while read -r dir target; do
+    target="${target%$'\r'}"
     [[ -z "${dir:-}" || "$dir" == \#* ]] && continue
     art="$build/$dir/${target}_artefacts/Release"
     [[ -d "$art/AU/$dir.component" && -d "$art/VST3/$dir.vst3" ]] || { echo "manca $dir in $art" >&2; exit 1; }
