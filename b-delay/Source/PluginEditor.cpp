@@ -1,28 +1,5 @@
 #include "PluginEditor.h"
 
-TimeSlot::TimeSlot (BDelayProcessor& p) : proc (p)
-{
-    ms.setParameter (p.apvts.getParameter (BDelayIDs::time));
-    ms.format = [] (float v) { return v < 100.0f ? ui::num (v, 1) + " ms" : juce::String (juce::roundToInt (v)) + " ms"; };
-    ms.step = [] (float v, int d) { return v < 100.0f ? std::round (v) + (float) d : std::round (v / 10.0f + (float) d) * 10.0f; };
-    ms.drag = [&p] (float, float startNorm, float dx) { auto* a = p.apvts.getParameter (BDelayIDs::time); return a->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, startNorm + dx * 0.002f)); };
-    ms.sizeSamples = { "2000 ms", "88.8 ms" };
-    div.setParameter (p.apvts.getParameter (BDelayIDs::division));
-    div.format = [] (float v) { return BDelayProcessor::divisionNames()[juce::jlimit (0, BDelayProcessor::kDivisions - 1, juce::roundToInt (v))]; };
-    div.step = [] (float v, int d) { return (float) juce::jlimit (0, BDelayProcessor::kDivisions - 1, juce::roundToInt (v) + d); };
-    div.drag = [&p] (float, float startNorm, float dx) { auto* a = p.apvts.getParameter (BDelayIDs::division); return a->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, startNorm + dx * 0.004f)); };
-    div.sizeSamples = { "2000 ms", "1/16D" };   // stessa larghezza del riquadro in ms: il layout non si sposta
-    addAndMakeVisible (ms);
-    addChildComponent (div);
-    update();
-}
-
-void TimeSlot::update()
-{
-    const bool sync = proc.apvts.getRawParameterValue (BDelayIDs::sync)->load() > 0.5f;
-    if (div.isVisible() != sync) { div.setVisible (sync); ms.setVisible (! sync); }
-}
-
 void TapButton::paint (juce::Graphics& g)
 {
     using namespace ui;
@@ -96,7 +73,7 @@ void DelayGraph::paint (juce::Graphics& g)
 
     // tap previsti: posizione da time / offset / ping-pong, altezza dal feedback, campana più larga con lo smear
     const float tL = proc.msL.load(), tR = proc.msR.load(), fb = v (BDelayIDs::feedback) / 100.0f;
-    const float smear = v (BDelayIDs::smear) / 100.0f;
+    const float smear = v (BDelayIDs::smearOn) > 0.5f ? v (BDelayIDs::smear) / 100.0f : 0.0f;   // gruppo spento: niente campane
     const bool pp = v (BDelayIDs::pingpong) > 0.5f;
     auto drawTap = [&] (float ms, float amp, bool left)
     {
@@ -150,38 +127,147 @@ void DelayGraph::paint (juce::Graphics& g)
                       plot.getY() + 14.0f + 2.0f * tagH, juce::Justification::right);
 }
 
+namespace
+{
+    // colonne di uguale larghezza: il valore grande centrato nella sua colonna, con margine ai lati
+    void placeBig (juce::Component& c, juce::Rectangle<int> cell, int idealW)
+    {
+        const int w = juce::jlimit (juce::jmin (idealW, cell.getWidth() - 40), cell.getWidth() - 40, juce::jmax (idealW, 128));
+        c.setBounds (cell.getCentreX() - w / 2, cell.getY(), w, ui::BigValue::kHeight);
+    }
+    // pulsanti nella riga dei valori grandi: centrati in verticale sul numero
+    int buttonTop (int rowY) { return rowY + ui::BigValue::kHeight - ui::BigValue::kBoxH / 2 - 14; }
+    // gruppi in colonne di uguale larghezza, ognuno centrato nella sua; restituisce dove vanno le linee di separazione
+    std::vector<int> placeSections (const std::vector<ui::Section*>& secs, juce::Rectangle<int> area)
+    {
+        std::vector<int> seps;
+        const int n = (int) secs.size();
+        for (int i = 0; i < n; ++i)
+        {
+            const int x0 = area.getX() + area.getWidth() * i / n, x1 = area.getX() + area.getWidth() * (i + 1) / n;
+            const int w = secs[(size_t) i]->getIdealWidth();
+            secs[(size_t) i]->setBounds ((x0 + x1) / 2 - w / 2, area.getY(), w, area.getHeight());
+            if (i > 0) seps.push_back (x0);
+        }
+        return seps;
+    }
+}
+
+namespace
+{
+    void setupBox (ui::ValueBox& b, juce::RangedAudioParameter* p, std::function<juce::String (float)> f, std::function<float (float, int)> st,
+                   juce::StringArray sizes)
+    {
+        b.setParameter (p);
+        b.format = std::move (f);
+        b.step = std::move (st);
+        b.drag = [p] (float, float startNorm, float dx) { return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, startNorm + dx * 0.003f)); };
+        b.sizeSamples = std::move (sizes);
+    }
+}
+
 BDelayEditor::BDelayEditor (BDelayProcessor& p)
-    : ShellEditor (p, p.apvts, "delay", 1100, 470), timeSlot (p), graph (p)
+    : ShellEditor (p, p.apvts, "delay", 1100, 620), proc (p), graph (p),
+      toneSec ("tone"), modSec ("modulation", p.apvts.getParameter (BDelayIDs::modOn)),
+      smearSec ("smear", p.apvts.getParameter (BDelayIDs::smearOn)), duckSec ("duck", p.apvts.getParameter (BDelayIDs::duckOn)),
+      stereoSec ("stereo"), outSec ("output")
 {
     using namespace ui;
-    addHeaderCheck ("trails", BDelayIDs::trails);
-    addHeaderCheck ("ping-pong", BDelayIDs::pingpong);
+    auto prm = [&p] (const char* id) { return p.apvts.getParameter (id); };
     setHeaderChoice ("type", BDelayIDs::type, { "digital", "tape", "bbd", "lofi", "reverse" });
+    infoText = {};
     auto pct = [] (float v) { return juce::String (juce::roundToInt (v)) + " %"; };
     auto stepPct = [] (float v, int d) { return std::round (v) + 5.0f * (float) d; };
     auto oct6 = [] (float v, int d) { return v * std::pow (2.0f, (float) d / 6.0f); };
-    // il ritmo: quando arriva l'eco e quante volte torna; poi quanto se ne sente
-    addComponent ("time", timeSlot, timeSlot.idealWidth());
-    addCheck ("sync", BDelayIDs::sync);
+
+    // 1. i valori principali, in grande
+    time.label = "time"; time.setParameter (prm (BDelayIDs::time));
+    time.format = [] (float v) { return v < 100.0f ? num (v, 1) + " ms" : juce::String (juce::roundToInt (v)) + " ms"; };
+    time.step = [] (float v, int d) { return v < 100.0f ? std::round (v) + (float) d : std::round (v / 10.0f + (float) d) * 10.0f; };
+    time.normPerPixel = 0.002f;
+    division.label = "time"; division.setParameter (prm (BDelayIDs::division));
+    division.format = [] (float v) { return BDelayProcessor::divisionNames()[juce::jlimit (0, BDelayProcessor::kDivisions - 1, juce::roundToInt (v))]; };
+    division.step = [] (float v, int d) { return (float) juce::jlimit (0, BDelayProcessor::kDivisions - 1, juce::roundToInt (v) + d); };
+    division.normPerPixel = 0.006f;
+    division.sizeSamples = { "2000 ms" };   // stessa larghezza del tempo in ms: il layout non si sposta
+    feedback.label = "feedback"; feedback.setParameter (prm (BDelayIDs::feedback)); feedback.format = pct; feedback.step = stepPct;
+    mix.label = "mix"; mix.setParameter (prm (BDelayIDs::mix)); mix.format = pct; mix.step = stepPct;
+    addAndMakeVisible (time); addChildComponent (division); addAndMakeVisible (feedback); addAndMakeVisible (mix);
+    sync.bindTo (*prm (BDelayIDs::sync));
+    addAndMakeVisible (sync);
     tapBtn.onTap = [&p] { p.tap(); };
     tapBtn.setMouseCursor (juce::MouseCursor::PointingHandCursor);
-    addComponent ({}, tapBtn, 46);
-    addValue ("feedback", BDelayIDs::feedback, pct, stepPct, { "110 %" });
-    addValue ("mix", BDelayIDs::mix, pct, stepPct, { "100 %" });
-    // il colore delle ripetizioni: filtri, poi movimento e diffusione
-    beginColumn (1);
-    addValue ("locut", BDelayIDs::locut, [] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; }, oct6, { "800 Hz", "888 Hz" });
-    addValue ("hicut", BDelayIDs::hicut, [] (float v) { return freqText (v); }, oct6, { "20.0 kHz", "8.88 kHz" });
-    addValue ("mod", BDelayIDs::mod, pct, stepPct, { "100 %" });
-    addValue ("smear", BDelayIDs::smear, pct, stepPct, { "100 %" });
-    // immagine, dinamica e livello d'uscita
-    beginColumn (2);
-    addValue ("offset", BDelayIDs::offset, [] (float v) { const int i = juce::roundToInt (v); return (i > 0 ? "+" : "") + juce::String (i) + " %"; }, stepPct, { "-50 %", "+50 %" });
-    addValue ("duck", BDelayIDs::duck, pct, stepPct, { "100 %" });
-    addValue ("output", BDelayIDs::output, [] (float v) { return (v > 0.04f ? "+" : "") + num (v, 1) + " dB"; },
+    addAndMakeVisible (tapBtn);
+
+    // 3. i gruppi
+    setupBox (locut, prm (BDelayIDs::locut), [] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; }, oct6, { "800 Hz", "888 Hz" });
+    setupBox (hicut, prm (BDelayIDs::hicut), [] (float v) { return freqText (v); }, oct6, { "20.0 kHz", "8.88 kHz" });
+    setupBox (mod, prm (BDelayIDs::mod), pct, stepPct, { "100 %" });
+    setupBox (smear, prm (BDelayIDs::smear), pct, stepPct, { "100 %" });
+    setupBox (duck, prm (BDelayIDs::duck), pct, stepPct, { "100 %" });
+    setupBox (offset, prm (BDelayIDs::offset), [] (float v) { const int i = juce::roundToInt (v); return (i > 0 ? "+" : "") + juce::String (i) + " %"; },
+              stepPct, { "-50 %", "+50 %" });
+    setupBox (output, prm (BDelayIDs::output), [] (float v) { return (v > 0.04f ? "+" : "") + num (v, 1) + " dB"; },
               [] (float v, int d) { return std::round (v * 2.0f + (float) d) / 2.0f; }, { "+12.0 dB", "-24.0 dB" });
-    endColumn();
-    setDisplay (graph);
-    displayRefreshesItself = true;
+    pingpong.bindTo (*prm (BDelayIDs::pingpong));
+    trails.bindTo (*prm (BDelayIDs::trails));
+    toneSec.add ("locut", locut, locut.getIdealWidth());
+    toneSec.add ("hicut", hicut, hicut.getIdealWidth());
+    modSec.add ("depth", mod, mod.getIdealWidth());
+    smearSec.add ("amount", smear, smear.getIdealWidth());
+    duckSec.add ("amount", duck, duck.getIdealWidth());
+    stereoSec.add ("offset", offset, offset.getIdealWidth());
+    stereoSec.add ({}, pingpong, pingpong.getIdealWidth());
+    outSec.add ("output", output, output.getIdealWidth());
+    outSec.add ({}, trails, trails.getIdealWidth());
+    for (auto* sec : sections) { addAndMakeVisible (*sec); sec->refresh(); }
+    addAndMakeVisible (graph);
+    tick();
     resized();
+}
+
+void BDelayEditor::tick()
+{
+    const bool synced = proc.apvts.getRawParameterValue (BDelayIDs::sync)->load() > 0.5f;
+    if (division.isVisible() != synced) { division.setVisible (synced); time.setVisible (! synced); }
+    if (tapBtn.flash > 0) { --tapBtn.flash; tapBtn.repaint(); }
+    for (auto* sec : sections) sec->refresh();
+    graph.repaint();
+}
+
+void BDelayEditor::resized()
+{
+    using namespace ui;
+    ShellEditor::resized();
+    const auto b = box().reduced (1 + kFramePad + 6);   // un po' più d'aria del padding standard
+    // 1. valori grandi in colonne uguali: time, sync + tap, feedback, mix
+    {
+        const int n = 4;
+        auto cell = [&] (int i) { return juce::Rectangle<int> (b.getX() + b.getWidth() * i / n, b.getY(), b.getWidth() / n, BigValue::kHeight); };
+        placeBig (time, cell (0), juce::jmax (time.getIdealWidth(), division.getIdealWidth()));
+        division.setBounds (time.getBounds());
+        const int sw = sync.getIdealWidth() + 8, tw = 60, pairW = sw + 8 + tw;
+        const int px = cell (1).getCentreX() - pairW / 2;
+        sync.setBounds (px, buttonTop (b.getY()), sw, 28);
+        tapBtn.setBounds (px + sw + 8, buttonTop (b.getY()), tw, 28);
+        placeBig (feedback, cell (2), feedback.getIdealWidth());
+        placeBig (mix, cell (3), mix.getIdealWidth());
+    }
+    // 3. gruppi in basso
+    int secH = 0;
+    for (auto* sec : sections) secH = juce::jmax (secH, sec->getIdealHeight());
+    const int secY = b.getBottom() - secH;
+    separators = placeSections ({ sections.begin(), sections.end() }, { b.getX(), secY, b.getWidth(), secH });
+    // 2. la timeline in mezzo, con lo stesso respiro sopra e sotto
+    const int gy = b.getY() + BigValue::kHeight + 26;
+    graph.setBounds (b.getX(), gy, b.getWidth(), secY - 30 - gy);
+}
+
+void BDelayEditor::paint (juce::Graphics& g)
+{
+    ShellEditor::paint (g);
+    const auto r = sections.front()->getBounds();
+    if (r.isEmpty()) return;
+    g.setColour (ui::separator);
+    for (int sx : separators) g.fillRect (sx, r.getY(), 1, r.getHeight());
 }

@@ -3,10 +3,12 @@
 
 namespace
 {
-    enum { P_TYPE, P_TIME, P_SYNC, P_DIV, P_FB, P_LOCUT, P_HICUT, P_MIX, P_OFFSET, P_PP, P_MOD, P_SMEAR, P_DUCK, P_OUT, P_TRAILS, P_BYPASS };
-    constexpr const char* kIds[16] = { BDelayIDs::type, BDelayIDs::time, BDelayIDs::sync, BDelayIDs::division, BDelayIDs::feedback, BDelayIDs::locut,
+    enum { P_TYPE, P_TIME, P_SYNC, P_DIV, P_FB, P_LOCUT, P_HICUT, P_MIX, P_OFFSET, P_PP, P_MOD, P_SMEAR, P_DUCK, P_OUT, P_TRAILS, P_BYPASS,
+           P_MOD_ON, P_SMEAR_ON, P_DUCK_ON };
+    constexpr const char* kIds[19] = { BDelayIDs::type, BDelayIDs::time, BDelayIDs::sync, BDelayIDs::division, BDelayIDs::feedback, BDelayIDs::locut,
                                        BDelayIDs::hicut, BDelayIDs::mix, BDelayIDs::offset, BDelayIDs::pingpong, BDelayIDs::mod, BDelayIDs::smear,
-                                       BDelayIDs::duck, BDelayIDs::output, BDelayIDs::trails, BDelayIDs::bypass };
+                                       BDelayIDs::duck, BDelayIDs::output, BDelayIDs::trails, BDelayIDs::bypass,
+                                       BDelayIDs::modOn, BDelayIDs::smearOn, BDelayIDs::duckOn };
     constexpr float kSmearMs[4] = { 3.1f, 4.7f, 7.3f, 11.9f };
     inline float sin2 (float p) noexcept { const float s = std::sin (juce::MathConstants<float>::pi * p); return s * s; }
 }
@@ -59,11 +61,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout BDelayProcessor::createLayou
     f (BDelayIDs::offset, "Offset", { -50.0f, 50.0f, 1.0f }, 0.0f, "%");
     l.add (std::make_unique<AudioParameterBool> (ParameterID { BDelayIDs::pingpong, 1 }, "Ping-pong", false));
     f (BDelayIDs::mod, "Mod", { 0.0f, 100.0f, 1.0f }, 20.0f, "%");
-    f (BDelayIDs::smear, "Smear", { 0.0f, 100.0f, 1.0f }, 0.0f, "%");
-    f (BDelayIDs::duck, "Duck", { 0.0f, 100.0f, 1.0f }, 0.0f, "%");
+    f (BDelayIDs::smear, "Smear", { 0.0f, 100.0f, 1.0f }, 40.0f, "%");
+    f (BDelayIDs::duck, "Duck", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
     f (BDelayIDs::output, "Output", { -24.0f, 12.0f, 0.1f }, 0.0f, "dB");
     l.add (std::make_unique<AudioParameterBool> (ParameterID { BDelayIDs::trails, 1 }, "Trails", true));
     l.add (std::make_unique<AudioParameterBool> (ParameterID { BDelayIDs::bypass, 1 }, "Bypass", false));
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BDelayIDs::modOn, 1 }, "Mod on", true));
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BDelayIDs::smearOn, 1 }, "Smear on", false));
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BDelayIDs::duckOn, 1 }, "Duck on", false));
     return l;
 }
 
@@ -112,6 +117,9 @@ void BDelayProcessor::prepareToPlay (double sampleRate, int)
     updateCharacter();
     auto osc = [this] (float hz, float& s, float& c, float& k) { k = 2.0f * std::sin (juce::MathConstants<float>::pi * hz / (float) fs); s = 0.0f; c = 1.0f; };
     osc (0.8f, modS, modC, modK); osc (0.5f, wowS, wowC, wowK); osc (6.0f, flS, flC, flK);
+    modSm = prm (P_MOD_ON) > 0.5f ? prm (P_MOD) / 100.0f : 0.0f;
+    smearSm = prm (P_SMEAR_ON) > 0.5f ? prm (P_SMEAR) / 100.0f * 0.7f : 0.0f;
+    duckSm = prm (P_DUCK_ON) > 0.5f ? prm (P_DUCK) / 100.0f : 0.0f;
     fbSm = prm (P_FB) / 100.0f; mixSm = prm (P_MIX) / 100.0f; outSm = sp::dbToGain (prm (P_OUT)); sendSm = 1.0f;
     duckEnv = 0; duckAtk = sp::coefMs (10.0, fs); duckRel = sp::coefMs (250.0, fs);
     lastHi = lastLo = -1; lastType = -1;
@@ -204,8 +212,11 @@ void BDelayProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     updateCharacter();
     const bool pp = prm (P_PP) > 0.5f;
     const float fbT = prm (P_FB) / 100.0f, mixT = prm (P_MIX) / 100.0f, outT = sp::dbToGain (prm (P_OUT));
-    const float modD = prm (P_MOD) / 100.0f * 0.003f * (float) fs;   // fino a ±3 ms
-    const float smear = prm (P_SMEAR) / 100.0f * 0.7f, duckAmt = prm (P_DUCK) / 100.0f;
+    // gruppi spenti: il valore va a zero scivolando (accendere / spegnere non fa click)
+    const float modT = prm (P_MOD_ON) > 0.5f ? prm (P_MOD) / 100.0f : 0.0f;   // fino a ±3 ms
+    const float smearT = prm (P_SMEAR_ON) > 0.5f ? prm (P_SMEAR) / 100.0f * 0.7f : 0.0f;
+    const float duckT = prm (P_DUCK_ON) > 0.5f ? prm (P_DUCK) / 100.0f : 0.0f;
+    const float modScale = 0.003f * (float) fs;
     const bool bypassed = prm (P_BYPASS) > 0.5f, trails = prm (P_TRAILS) > 0.5f;
     const float sendT = bypassed ? 0.0f : 1.0f, wetOutT = bypassed && ! trails ? 0.0f : 1.0f;
     const float dCoef = 1.0f - std::exp (-1.0f / (0.08f * (float) fs));   // il tempo scivola in ~80 ms: repitch da nastro
@@ -220,6 +231,8 @@ void BDelayProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         flS += flK * flC; flC -= flK * flS;
         fbSm += a * (fbT - fbSm); mixSm += a * (mixT - mixSm); outSm += a * (outT - outSm);
         sendSm += a * (sendT - sendSm); wetOutSm += a * (wetOutT - wetOutSm);
+        modSm += a * (modT - modSm); smearSm += a * (smearT - smearSm); duckSm += a * (duckT - duckSm);
+        const float modD = modSm * modScale, smear = smearSm, duckAmt = duckSm;
 
         float proc[2];
         for (int c = 0; c < 2; ++c)
@@ -264,7 +277,7 @@ void BDelayProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
         const float dry = std::abs (0.5f * (xl + xr));
         duckEnv = dry > duckEnv ? duckAtk * (duckEnv - dry) + dry : duckRel * (duckEnv - dry) + dry;
-        const float duckG = duckAmt > 0.0f ? 1.0f - duckAmt * 0.85f * juce::jlimit (0.0f, 1.0f, (sp::gainToDb (duckEnv) + 45.0f) / 30.0f) : 1.0f;
+        const float duckG = duckAmt > 1.0e-4f ? 1.0f - duckAmt * 0.85f * juce::jlimit (0.0f, 1.0f, (sp::gainToDb (duckEnv) + 45.0f) / 30.0f) : 1.0f;
         const float dryG = bypassed ? 1.0f : juce::jmin (1.0f, 2.0f * (1.0f - mixSm));
         const float wetG = juce::jmin (1.0f, 2.0f * mixSm) * duckG * wetOutSm;
         L[i] = (dryG * xl + wetG * proc[0]) * (bypassed ? 1.0f : outSm);
@@ -293,7 +306,16 @@ void BDelayProcessor::getStateInformation (juce::MemoryBlock& d)
 void BDelayProcessor::setStateInformation (const void* data, int size)
 {
     if (auto xml = getXmlFromBinary (data, size))
-        if (xml->hasTagName (apvts.state.getType())) apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        if (xml->hasTagName (apvts.state.getType()))
+        {
+            // progetti salvati prima degli on/off: smear e duck accesi se erano già in uso (si guarda prima di caricare:
+            // replaceState aggiunge allo stato i parametri che mancano)
+            const auto tree = juce::ValueTree::fromXml (*xml);
+            const bool oldProject = ! tree.getChildWithProperty ("id", BDelayIDs::duckOn).isValid();
+            apvts.replaceState (tree);
+            if (oldProject && prm (P_SMEAR) > 0.0f) apvts.getParameter (BDelayIDs::smearOn)->setValueNotifyingHost (1.0f);
+            if (oldProject && prm (P_DUCK) > 0.0f) apvts.getParameter (BDelayIDs::duckOn)->setValueNotifyingHost (1.0f);
+        }
 }
 
 juce::AudioProcessorEditor* BDelayProcessor::createEditor() { return new BDelayEditor (*this); }

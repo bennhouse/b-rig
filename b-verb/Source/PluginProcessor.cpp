@@ -4,10 +4,11 @@
 
 namespace
 {
-    enum { P_TYPE, P_DECAY, P_PRE, P_SIZE, P_LOCUT, P_HICUT, P_MIX, P_EARLY, P_DAMP, P_MOD, P_DUCK, P_STEREO, P_FREEZE, P_OUT };
-    constexpr const char* kIds[14] = { BVerbIDs::type, BVerbIDs::decay, BVerbIDs::predelay, BVerbIDs::size, BVerbIDs::locut, BVerbIDs::hicut,
+    enum { P_TYPE, P_DECAY, P_PRE, P_SIZE, P_LOCUT, P_HICUT, P_MIX, P_EARLY, P_DAMP, P_MOD, P_DUCK, P_STEREO, P_FREEZE, P_OUT,
+           P_EARLY_ON, P_MOD_ON, P_DUCK_ON };
+    constexpr const char* kIds[17] = { BVerbIDs::type, BVerbIDs::decay, BVerbIDs::predelay, BVerbIDs::size, BVerbIDs::locut, BVerbIDs::hicut,
                                        BVerbIDs::mix, BVerbIDs::early, BVerbIDs::damp, BVerbIDs::mod, BVerbIDs::duck, BVerbIDs::stereo,
-                                       BVerbIDs::freeze, BVerbIDs::output };
+                                       BVerbIDs::freeze, BVerbIDs::output, BVerbIDs::earlyOn, BVerbIDs::modOn, BVerbIDs::duckOn };
     constexpr float kDiffMs[4] = { 4.7f, 3.6f, 12.7f, 9.3f };
     constexpr float kTypeDiff[5] = { 0.5f, 0.75f, 0.6f, 0.0f, 0.6f };   // densità della diffusione per tipo
     constexpr float kInSign[8] = { 1, -1, 1, -1, -1, 1, -1, 1 };
@@ -81,10 +82,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout BVerbProcessor::createLayout
     f (BVerbIDs::early, "Early", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
     f (BVerbIDs::damp, "Damp", skewed (1000.0f, 16000.0f, 10.0f, 5000.0f), 6500.0f, "Hz");
     f (BVerbIDs::mod, "Mod", { 0.0f, 100.0f, 1.0f }, 30.0f, "%");
-    f (BVerbIDs::duck, "Duck", { 0.0f, 100.0f, 1.0f }, 0.0f, "%");
+    f (BVerbIDs::duck, "Duck", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
     f (BVerbIDs::stereo, "Stereo", { 0.0f, 100.0f, 1.0f }, 100.0f, "%");
     l.add (std::make_unique<AudioParameterBool> (ParameterID { BVerbIDs::freeze, 1 }, "Freeze", false));
     f (BVerbIDs::output, "Output", { -24.0f, 12.0f, 0.1f }, 0.0f, "dB");
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BVerbIDs::earlyOn, 1 }, "Early on", true));
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BVerbIDs::modOn, 1 }, "Mod on", true));
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BVerbIDs::duckOn, 1 }, "Duck on", false));
     return l;
 }
 
@@ -125,7 +129,7 @@ void BVerbProcessor::prepareToPlay (double sampleRate, int)
     mixSm = prm (P_MIX) / 100.0f; outSm = sp::dbToGain (prm (P_OUT)); widthSm = prm (P_STEREO) / 100.0f;
     type = -1; ctl = 0;
     control();
-    len = lenT; b0 = b0T; b1 = b1T; a1 = a1T; tapD = tapDT; earlyG = earlyGT; preSm = preT;
+    modDepth = modDepthT; len = lenT; b0 = b0T; b1 = b1T; a1 = a1T; tapD = tapDT; earlyG = earlyGT; preSm = preT;
     acc = {}; accN = 0;
 }
 
@@ -153,8 +157,8 @@ void BVerbProcessor::control() noexcept
     preT = prm (P_PRE) * 0.001f * (float) fs;
     for (int k = 0; k < kTaps; ++k)
         for (int c = 0; c < 2; ++c) tapDT[(size_t) c][(size_t) k] = preT + tapTimeMs (t, size, k, c == 1) * 0.001f * (float) fs;
-    earlyGT = prm (P_EARLY) / 100.0f * kTypeEarly[t] * 0.45f;
-    modDepth = (prm (P_MOD) / 100.0f) * 10.0f * (float) (fs / 48000.0) * (t == Plate ? 0.5f : 1.0f);
+    earlyGT = prm (P_EARLY_ON) > 0.5f ? prm (P_EARLY) / 100.0f * kTypeEarly[t] * 0.45f : 0.0f;
+    modDepthT = prm (P_MOD_ON) < 0.5f ? 0.0f : (prm (P_MOD) / 100.0f) * 10.0f * (float) (fs / 48000.0) * (t == Plate ? 0.5f : 1.0f);
     for (auto& f : loCut) f.set (fs, prm (P_LOCUT));
     for (auto& f : hiCut) f.set (fs, juce::jmin (prm (P_HICUT), (float) (0.45 * fs)));
 }
@@ -167,7 +171,7 @@ void BVerbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const int inCh = juce::jmin (getTotalNumInputChannels(), buffer.getNumChannels());
     float* L = buffer.getWritePointer (0);
     float* R = buffer.getWritePointer (1);
-    const float mixT = prm (P_MIX) / 100.0f, outT = sp::dbToGain (prm (P_OUT)), widthT = prm (P_STEREO) / 100.0f, duckAmt = prm (P_DUCK) / 100.0f;
+    const float mixT = prm (P_MIX) / 100.0f, outT = sp::dbToGain (prm (P_OUT)), widthT = prm (P_STEREO) / 100.0f, duckAmt = prm (P_DUCK_ON) > 0.5f ? prm (P_DUCK) / 100.0f : 0.0f;
     constexpr float a = 0.0015f;   // inseguimento dei valori (~15 ms a 48 kHz)
 
     auto readIn = [this] (int c, float d) noexcept
@@ -221,6 +225,7 @@ void BVerbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         // 4. FDN 8x8
         float v[kLines], out[kLines];
         a1 += a * (a1T - a1);
+        modDepth += a * (modDepthT - modDepth);   // accendere / spegnere la modulazione non fa click
         for (size_t k = 0; k < kLines; ++k)
         {
             len[k] += a * (lenT[k] - len[k]);
@@ -304,7 +309,15 @@ void BVerbProcessor::getStateInformation (juce::MemoryBlock& d)
 void BVerbProcessor::setStateInformation (const void* data, int size)
 {
     if (auto xml = getXmlFromBinary (data, size))
-        if (xml->hasTagName (apvts.state.getType())) apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        if (xml->hasTagName (apvts.state.getType()))
+        {
+            // progetti salvati prima degli on/off: duck acceso se era già in uso (si guarda prima di caricare:
+            // replaceState aggiunge allo stato i parametri che mancano)
+            const auto tree = juce::ValueTree::fromXml (*xml);
+            const bool oldProject = ! tree.getChildWithProperty ("id", BVerbIDs::duckOn).isValid();
+            apvts.replaceState (tree);
+            if (oldProject && prm (P_DUCK) > 0.0f) apvts.getParameter (BVerbIDs::duckOn)->setValueNotifyingHost (1.0f);
+        }
 }
 
 juce::AudioProcessorEditor* BVerbProcessor::createEditor() { return new BVerbEditor (*this); }

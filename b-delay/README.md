@@ -19,13 +19,20 @@ A delay for any source with its character inside the feedback loop, so each repe
 
 ## Controls
 
-The controls are grouped by what they do, most important first:
+The window has three levels, from the most important down:
 
-- **Top right**, the modes: `trails`, `ping-pong` and `type` (digital, tape, bbd, lofi, reverse).
-- **Top row**, the rhythm and how much of it you hear: `time` (1-2000 ms; with `sync` a note value instead: 1/1 to 1/16, dotted D and triplet T, on the song tempo), `sync`, `tap` (the average of the last clicks; it switches sync off), `feedback` (0-110 %), `mix`.
-- **Left of the graph**, the colour of the repeats: `locut` (20-800 Hz), `hicut` (0.8-20 kHz), `mod`, `smear`.
-- **Right of the graph**, image and level: `offset` (the right channel's time ±50 % against the left), `duck`, `output`.
-- **The graph** (left above the centre line, right below): the predicted repeats (position from time, offset and ping-pong, height from feedback, wider bells with smear), the sound travelling along the delay line, the input at 0 ms in grey, and the repeats lighting up when they sound. The time window adapts to the delay (250 ms, 500 ms, 1 s or 2 s, the shortest that shows at least four repeats), so a slapback is as readable as a long echo. With `tape` or `bbd` a tag says how far the highs of the repeats reach at the current time.
+- **Top right:** `type` (digital, tape, bbd, lofi, reverse).
+- **Big values**, each centred in its own column in a fixed box: the number never moves when its digits change (it is right-aligned in a slot as wide as the longest value), the grey fill and the box's bottom edge in the plugin's colour show where the value sits in its range: `time` (1-2000 ms; with `sync` the note value instead: 1/1 to 1/16, dotted D and triplet T, on the song tempo), the `sync` and `tap` buttons (`tap` averages the last clicks and switches sync off), `feedback` (0-110 %) and `mix`. Drag (right or up for more), use the wheel, or double-click to reset and type a value.
+- **The timeline** (left above the centre line, right below): the predicted repeats (position from time, offset and ping-pong, height from feedback, wider bells with smear), the sound travelling along the delay line, the input at 0 ms in grey, and the repeats lighting up when they sound. The window adapts to the delay (250 ms, 500 ms, 1 s or 2 s, the shortest that shows at least four repeats). With `tape` or `bbd` a tag says how far the highs of the repeats reach at the current time.
+- **Groups** at the bottom, in equal columns with a thin line between them. The optional ones have an on/off box next to the title; when a group is off its title and labels turn dark grey and its controls are disabled:
+  - **tone**: `locut` (20-800 Hz), `hicut` (0.8-20 kHz).
+  - **modulation** (on/off): `depth`, a slow chorus on the repeats.
+  - **smear** (on/off, off by default): `amount` of diffusion.
+  - **duck** (on/off, off by default): `amount`, how much the repeats drop while you play.
+  - **stereo**: `offset` (the right channel's time ±50 % against the left) and the `ping-pong` button.
+  - **output**: `output` and the `trails` button.
+
+Switching a group on or off glides, so it never clicks (tested). Projects saved before the on/off boxes open with `smear` and `duck` on if they were already in use (tested).
 
 ## Measured (see `Tests/Tests.cpp`)
 
@@ -40,7 +47,7 @@ The controls are grouped by what they do, most important first:
 
 ## About panel
 
-Click the b-delay logo for a short description of the plugin, signed b-suite (crafted in Italy, built with Claude). Click anywhere or press Esc to close. Inside b-rig the plugin has no title or about panel and its top row is centred.
+Click the b-delay logo for a short description of the plugin, signed b-suite (free and open source, built with Claude Code). Click anywhere or press Esc to close. Inside b-rig the plugin has no title or about panel and its top row is centred.
 
 ## Updates
 
@@ -60,4 +67,4 @@ On macOS the AU/VST3 are copied to `~/Library/Audio/Plug-Ins` after the build. T
 
 ## Credits
 
-Fonts: [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License (`../shared/Resources/OFL-IBMPlex.txt`). Built with [JUCE](https://juce.com), which is dual-licensed: AGPLv3 or commercial. Choose this project's license accordingly before publishing.
+Fonts: [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License (`../shared/Resources/OFL-IBMPlex.txt`). Built with [JUCE](https://juce.com) (AGPLv3). b-suite is free software under the GNU AGPLv3: see `../LICENSE`.

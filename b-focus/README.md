@@ -83,7 +83,7 @@ Value boxes: drag horizontally, click the arrows or use the mouse wheel. A light
 
 ## About panel
 
-Click the b-focus logo for a short description of the plugin, signed b-suite (crafted in Italy, built with Claude). Click anywhere or press Esc to close.
+Click the b-focus logo for a short description of the plugin, signed b-suite (free and open source, built with Claude Code). Click anywhere or press Esc to close.
 
 ## Updates
 
@@ -103,4 +103,4 @@ The DSP engine is a single header (`Source/DSP/FocusEngine.h`, no JUCE dependenc
 
 ## Credits
 
-Fonts: [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License (`../shared/Resources/OFL-IBMPlex.txt`). Built with [JUCE](https://juce.com), which is dual-licensed: AGPLv3 or commercial. Choose this project's license accordingly before publishing.
+Fonts: [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License (`../shared/Resources/OFL-IBMPlex.txt`). Built with [JUCE](https://juce.com) (AGPLv3). b-suite is free software under the GNU AGPLv3: see `../LICENSE`.

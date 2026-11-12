@@ -8,7 +8,7 @@ void VerbGraph::paint (juce::Graphics& g)
     auto v = [&] (const char* id) { return s.getRawParameterValue (id)->load(); };
     const int type = juce::jlimit (0, 4, (int) v (BVerbIDs::type));
     const float pre = v (BVerbIDs::predelay) / 1000.0f, decay = v (BVerbIDs::decay), size = v (BVerbIDs::size) / 100.0f;
-    const float early = v (BVerbIDs::early) / 100.0f, damp = v (BVerbIDs::damp);
+    const float early = v (BVerbIDs::earlyOn) > 0.5f ? v (BVerbIDs::early) / 100.0f : 0.0f, damp = v (BVerbIDs::damp);
     const bool freeze = v (BVerbIDs::freeze) > 0.5f;
     const double fs = proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0;
 
@@ -110,37 +110,130 @@ void VerbGraph::paint (juce::Graphics& g)
     }
 }
 
+namespace
+{
+    // colonne di uguale larghezza: il valore grande centrato nella sua colonna, con margine ai lati
+    void placeBig (juce::Component& c, juce::Rectangle<int> cell, int idealW)
+    {
+        const int w = juce::jlimit (juce::jmin (idealW, cell.getWidth() - 40), cell.getWidth() - 40, juce::jmax (idealW, 128));
+        c.setBounds (cell.getCentreX() - w / 2, cell.getY(), w, ui::BigValue::kHeight);
+    }
+    // pulsanti nella riga dei valori grandi: centrati in verticale sul numero
+    int buttonTop (int rowY) { return rowY + ui::BigValue::kHeight - ui::BigValue::kBoxH / 2 - 14; }
+    // gruppi in colonne di uguale larghezza, ognuno centrato nella sua; restituisce dove vanno le linee di separazione
+    std::vector<int> placeSections (const std::vector<ui::Section*>& secs, juce::Rectangle<int> area)
+    {
+        std::vector<int> seps;
+        const int n = (int) secs.size();
+        for (int i = 0; i < n; ++i)
+        {
+            const int x0 = area.getX() + area.getWidth() * i / n, x1 = area.getX() + area.getWidth() * (i + 1) / n;
+            const int w = secs[(size_t) i]->getIdealWidth();
+            secs[(size_t) i]->setBounds ((x0 + x1) / 2 - w / 2, area.getY(), w, area.getHeight());
+            if (i > 0) seps.push_back (x0);
+        }
+        return seps;
+    }
+}
+
+namespace
+{
+    void setupBox (ui::ValueBox& b, juce::RangedAudioParameter* p, std::function<juce::String (float)> f, std::function<float (float, int)> st,
+                   juce::StringArray sizes)
+    {
+        b.setParameter (p);
+        b.format = std::move (f);
+        b.step = std::move (st);
+        b.drag = [p] (float, float startNorm, float dx) { return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, startNorm + dx * 0.003f)); };
+        b.sizeSamples = std::move (sizes);
+    }
+    void setupBig (ui::BigValue& b, const juce::String& label, juce::RangedAudioParameter* p, std::function<juce::String (float)> f,
+                   std::function<float (float, int)> st)
+    {
+        b.label = label; b.setParameter (p); b.format = std::move (f); b.step = std::move (st);
+    }
+}
+
 BVerbEditor::BVerbEditor (BVerbProcessor& p)
-    : ShellEditor (p, p.apvts, "verb", 1100, 480), graph (p)
+    : ShellEditor (p, p.apvts, "verb", 1100, 640), graph (p),
+      earlySec ("early", p.apvts.getParameter (BVerbIDs::earlyOn)), toneSec ("tone"),
+      modSec ("modulation", p.apvts.getParameter (BVerbIDs::modOn)), duckSec ("duck", p.apvts.getParameter (BVerbIDs::duckOn)),
+      outSec ("output")
 {
     using namespace ui;
-    addHeaderCheck ("freeze", BVerbIDs::freeze);
+    auto prm = [&p] (const char* id) { return p.apvts.getParameter (id); };
     setHeaderChoice ("type", BVerbIDs::type, { "room", "plate", "hall", "spring", "shimmer" });
+    infoText = {};
     auto pct = [] (float v) { return juce::String (juce::roundToInt (v)) + " %"; };
     auto stepPct = [] (float v, int d) { return std::round (v) + 5.0f * (float) d; };
     auto oct6 = [] (float v, int d) { return v * std::pow (2.0f, (float) d / 6.0f); };
-    // lo spazio: quanto è grande, quanto dura, quando arriva, quanto si sentono le pareti; poi quanto se ne sente
-    addValue ("size", BVerbIDs::size, pct, stepPct, { "100 %" });
-    addValue ("decay", BVerbIDs::decay, [] (float v) { return num (v, 2) + " s"; },
-              [] (float v, int d) { return v * std::pow (2.0f, (float) d / 4.0f); }, { "20.00 s", "8.88 s" });
-    addValue ("predelay", BVerbIDs::predelay, [] (float v) { return num (v, 1) + " ms"; },
-              [] (float v, int d) { return std::round (v) + 5.0f * (float) d; }, { "200.0 ms", "88.8 ms" });
-    addValue ("early", BVerbIDs::early, pct, stepPct, { "100 %" });
-    addValue ("mix", BVerbIDs::mix, pct, stepPct, { "100 %" });
-    // il colore della coda: tutte le frequenze insieme, poi il movimento
-    beginColumn (1);
-    addValue ("damp", BVerbIDs::damp, [] (float v) { return freqText (v); }, oct6, { "16.0 kHz", "8.88 kHz" });
-    addValue ("locut", BVerbIDs::locut, [] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; }, oct6, { "500 Hz", "888 Hz" });
-    addValue ("hicut", BVerbIDs::hicut, [] (float v) { return freqText (v); }, oct6, { "20.0 kHz", "8.88 kHz" });
-    addValue ("mod", BVerbIDs::mod, pct, stepPct, { "100 %" });
-    // immagine, dinamica e livello d'uscita
-    beginColumn (2);
-    addValue ("width", BVerbIDs::stereo, pct, stepPct, { "100 %" });
-    addValue ("duck", BVerbIDs::duck, pct, stepPct, { "100 %" });
-    addValue ("output", BVerbIDs::output, [] (float v) { return (v > 0.04f ? "+" : "") + num (v, 1) + " dB"; },
+    auto hz = [] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; };
+
+    // 1. i valori principali, in grande
+    setupBig (size, "size", prm (BVerbIDs::size), pct, stepPct);
+    setupBig (decay, "decay", prm (BVerbIDs::decay), [] (float v) { return num (v, 2) + " s"; },
+              [] (float v, int d) { return v * std::pow (2.0f, (float) d / 4.0f); });
+    setupBig (predelay, "predelay", prm (BVerbIDs::predelay), [] (float v) { return num (v, 1) + " ms"; },
+              [] (float v, int d) { return std::round (v) + 5.0f * (float) d; });
+    setupBig (mix, "mix", prm (BVerbIDs::mix), pct, stepPct);
+    for (auto* b : { &size, &decay, &predelay, &mix }) addAndMakeVisible (*b);
+    freeze.bindTo (*prm (BVerbIDs::freeze));
+    addAndMakeVisible (freeze);
+
+    // 3. i gruppi
+    setupBox (early, prm (BVerbIDs::early), pct, stepPct, { "100 %" });
+    setupBox (damp, prm (BVerbIDs::damp), [] (float v) { return freqText (v); }, oct6, { "16.0 kHz", "8.88 kHz" });
+    setupBox (locut, prm (BVerbIDs::locut), hz, oct6, { "500 Hz", "888 Hz" });
+    setupBox (hicut, prm (BVerbIDs::hicut), [] (float v) { return freqText (v); }, oct6, { "20.0 kHz", "8.88 kHz" });
+    setupBox (mod, prm (BVerbIDs::mod), pct, stepPct, { "100 %" });
+    setupBox (duck, prm (BVerbIDs::duck), pct, stepPct, { "100 %" });
+    setupBox (width, prm (BVerbIDs::stereo), pct, stepPct, { "100 %" });
+    setupBox (output, prm (BVerbIDs::output), [] (float v) { return (v > 0.04f ? "+" : "") + num (v, 1) + " dB"; },
               [] (float v, int d) { return std::round (v * 2.0f + (float) d) / 2.0f; }, { "+12.0 dB", "-24.0 dB" });
-    endColumn();
-    setDisplay (graph);
-    displayRefreshesItself = true;
+    earlySec.add ("level", early, early.getIdealWidth());
+    toneSec.add ("damp", damp, damp.getIdealWidth());
+    toneSec.add ("locut", locut, locut.getIdealWidth());
+    toneSec.add ("hicut", hicut, hicut.getIdealWidth());
+    modSec.add ("depth", mod, mod.getIdealWidth());
+    duckSec.add ("amount", duck, duck.getIdealWidth());
+    outSec.add ("width", width, width.getIdealWidth());
+    outSec.add ("output", output, output.getIdealWidth());
+    for (auto* sec : sections) { addAndMakeVisible (*sec); sec->refresh(); }
+    addAndMakeVisible (graph);
     resized();
+}
+
+void BVerbEditor::resized()
+{
+    using namespace ui;
+    ShellEditor::resized();
+    const auto b = box().reduced (1 + kFramePad + 6);   // un po' più d'aria del padding standard
+    // 1. valori grandi in colonne uguali: size, decay, predelay, freeze, mix
+    {
+        const int n = 5;
+        auto cell = [&] (int i) { return juce::Rectangle<int> (b.getX() + b.getWidth() * i / n, b.getY(), b.getWidth() / n, BigValue::kHeight); };
+        placeBig (size, cell (0), size.getIdealWidth());
+        placeBig (decay, cell (1), decay.getIdealWidth());
+        placeBig (predelay, cell (2), predelay.getIdealWidth());
+        const int fw = freeze.getIdealWidth() + 16;
+        freeze.setBounds (cell (3).getCentreX() - fw / 2, buttonTop (b.getY()), fw, 28);
+        placeBig (mix, cell (4), mix.getIdealWidth());
+    }
+    // 3. gruppi in basso
+    int secH = 0;
+    for (auto* sec : sections) secH = juce::jmax (secH, sec->getIdealHeight());
+    const int secY = b.getBottom() - secH;
+    separators = placeSections ({ sections.begin(), sections.end() }, { b.getX(), secY, b.getWidth(), secH });
+    // 2. il grafico in mezzo, con lo stesso respiro sopra e sotto
+    const int gy = b.getY() + BigValue::kHeight + 26;
+    graph.setBounds (b.getX(), gy, b.getWidth(), secY - 30 - gy);
+}
+
+void BVerbEditor::paint (juce::Graphics& g)
+{
+    ShellEditor::paint (g);
+    if (sections.front()->getBounds().isEmpty()) return;
+    const auto r = sections.front()->getBounds();
+    g.setColour (ui::separator);
+    for (int sx : separators) g.fillRect (sx, r.getY(), 1, r.getHeight());
 }

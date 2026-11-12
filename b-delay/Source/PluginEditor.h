@@ -1,29 +1,22 @@
 #pragma once
-// Interfaccia b-delay (accento indaco). Gerarchia: in alto il ritmo (tempo, ripetizioni) e quanto se ne sente,
-// a sinistra il colore delle ripetizioni, a destra stereo e uscita; i modi (trails, ping-pong, tipo) nell'intestazione.
-//   b-delay                         trails [■]  ping-pong [ ]  type [digital|tape|bbd|lofi|reverse]
+// Interfaccia b-delay (accento indaco). Tre livelli, dal più importante:
+//   1. in grande, in alto: time (ms, o la figura con sync), feedback e mix, con i pulsanti sync e tap;
+//   2. la timeline: le ripetizioni previste e il suono che scorre (la finestra si adatta al tempo);
+//   3. sotto, i gruppi con il loro titolo; quelli facoltativi hanno l'on/off accanto al titolo:
+//        tone | [■] modulation | [ ] smear | [ ] duck | stereo | output
+//   b-delay                                            type [digital|tape|bbd|lofi|reverse]
 //   ┌──────────────────────────────────────────────────────────────────────────────────┐
-//     time < 380 ms >  sync [■]  [tap]  feedback < 45 % >  mix < 30 % >                          stereo
-//     locut < 120 Hz >   ┌ timeline: sopra L, sotto R; i tap previsti (posizione  ┐  offset < 0 % >
-//     hicut < 6.00 kHz > │ da time / offset / ping-pong, altezza dal feedback,     │  duck < 0 % >
-//     mod < 20 % >       │ larghezza dallo smear) e il suono che scorre; la finestra│  output < 0.0 dB >
-//     smear < 0 % >      └ si adatta al tempo (250 ms ... 2 s)                     ┘
+//     time         [sync] [tap]     feedback                                     mix
+//     380 ms                        45 %                                         30 %
+//     ▬▬▬▬                          ▬▬▬▬                                         ▬▬▬▬
+//     ┌ timeline ────────────────────────────────────────────────────────────────┐
+//     └──────────────────────────────────────────────────────────────────────────┘
+//     tone          │ [■] modulation │ [ ] smear   │ [ ] duck    │ stereo      │ output
+//     locut 120 Hz  │ depth 20 %     │ amount 40 % │ amount 50 % │ offset 0 %  │ output 0.0 dB
+//     hicut 6 kHz   │                │             │             │ [ping-pong] │ [trails]
 //   └──────────────────────────────────────────────────────────────────────────────────┘
-// Con sync acceso il riquadro del tempo mostra la figura (1/8D, 1/4T...) invece dei millisecondi.
 #include "PluginProcessor.h"
 #include "smp/Shell.h"
-
-class TimeSlot final : public juce::Component   // tempo in ms o figura, nello stesso posto
-{
-public:
-    explicit TimeSlot (BDelayProcessor&);
-    void resized() override { ms.setBounds (getLocalBounds()); div.setBounds (getLocalBounds()); }
-    void update();
-    int idealWidth() const { return juce::jmax (ms.getIdealWidth(), div.getIdealWidth()); }
-    ui::ValueBox ms, div;
-private:
-    BDelayProcessor& proc;
-};
 
 class TapButton final : public juce::Component
 {
@@ -49,14 +42,17 @@ class BDelayEditor final : public ui::ShellEditor
 {
 public:
     explicit BDelayEditor (BDelayProcessor&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
 private:
-    void tick() override
-    {
-        timeSlot.update();
-        if (tapBtn.flash > 0) { --tapBtn.flash; tapBtn.repaint(); }
-        graph.repaint();
-    }
-    TimeSlot timeSlot;
-    TapButton tapBtn;
+    void tick() override;
+    BDelayProcessor& proc;
     DelayGraph graph;
+    ui::BigValue time, division, feedback, mix;   // time e division nello stesso posto: si vede quello del modo sync
+    ui::TextToggle sync { "sync" }, pingpong { "ping-pong" }, trails { "trails" };
+    TapButton tapBtn;
+    ui::ValueBox locut, hicut, mod, smear, duck, offset, output;
+    ui::Section toneSec, modSec, smearSec, duckSec, stereoSec, outSec;
+    std::array<ui::Section*, 6> sections { &toneSec, &modSec, &smearSec, &duckSec, &stereoSec, &outSec };
+    std::vector<int> separators;
 };

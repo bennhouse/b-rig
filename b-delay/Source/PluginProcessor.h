@@ -39,6 +39,10 @@ namespace BDelayIDs
     inline constexpr const char* output   = "output";
     inline constexpr const char* trails   = "trails";
     inline constexpr const char* bypass   = "bypass";
+    // gruppi accesi / spenti dall'interfaccia
+    inline constexpr const char* modOn    = "modOn";
+    inline constexpr const char* smearOn  = "smearOn";
+    inline constexpr const char* duckOn   = "duckOn";
 }
 
 class BDelayProcessor final : public juce::AudioProcessor
@@ -84,7 +88,7 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    std::array<std::atomic<float>*, 16> raw {};
+    std::array<std::atomic<float>*, 19> raw {};
     float prm (int i) const noexcept { return raw[(size_t) i]->load(); }
     float readHermite (const std::vector<float>& b, float delay) const noexcept;
     float character (int ch, float x) noexcept;   // il carattere del tipo, dentro il loop
@@ -112,7 +116,7 @@ private:
     // modulazione (oscillatori in quadratura)
     float modS = 0, modC = 1, modK = 0, wowS = 0, wowC = 1, wowK = 0, flS = 0, flC = 1, flK = 0;
     std::array<float, 2> fbSig {};
-    float fbSm = 0.45f, mixSm = 0.3f, outSm = 1.0f, sendSm = 1.0f, wetOutSm = 1.0f, duckEnv = 0, duckAtk = 0, duckRel = 0, lastHi = -1, lastLo = -1;
+    float modSm = 0, smearSm = 0, duckSm = 0, fbSm = 0.45f, mixSm = 0.3f, outSm = 1.0f, sendSm = 1.0f, wetOutSm = 1.0f, duckEnv = 0, duckAtk = 0, duckRel = 0, lastHi = -1, lastLo = -1;
     int lastType = -1;
     // tap
     std::vector<double> taps;

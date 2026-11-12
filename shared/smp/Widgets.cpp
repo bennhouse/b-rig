@@ -418,6 +418,217 @@ void ValueBox::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDe
     if (isEnabled() && std::abs (d) > 0.0f) doStep (d > 0 ? +1 : -1);
 }
 
+// ============================================================================ BigValue
+float BigValue::widestInk() const
+{
+    // caso peggiore su tutto il range, come ValueBox: il riquadro e lo spazio del numero non cambiano mai
+    if (cachedFor == param && cachedWidest >= 0.0f) return cachedWidest;
+    float w = 0.0f;
+    juce::StringArray cands (sizeSamples);
+    if (param != nullptr)
+    {
+        const auto r = param->getNormalisableRange();
+        auto add = [&] (float v) { cands.addIfNotAlreadyThere (format ? format (v) : num (v, 2)); };
+        add (r.start); add (r.end);
+        for (int i = 0; i <= 256; ++i) add (param->convertFrom0to1 ((float) i / 256.0f));
+    }
+    for (const auto& s : cands) w = juce::jmax (w, makeValueInk (s, kNumberSize, kUnitSize).width);
+    cachedWidest = w; cachedFor = param;
+    return w;
+}
+
+int BigValue::getIdealWidth() const
+{
+    const float lw = juce::GlyphArrangement::getStringWidth (face (Face::SansMedium, kLabelSize), label);
+    return (int) std::ceil (juce::jmax (lw, widestInk() + 2.0f * 20.0f));   // 20 px d'aria ai lati del numero più largo
+}
+
+float BigValue::numberBaseline() const
+{
+    const auto b = boxArea();
+    return std::round (b.getCentreY() + capHeight (kNumberSize, Face::MonoMedium) * 0.5f);
+}
+
+void BigValue::paint (juce::Graphics& g)
+{
+    if (param == nullptr) return;
+    const bool en = isEnabled();
+    const auto col = accentOf (*this);
+    const float cx = (float) getWidth() * 0.5f;
+    drawAtBaseline (g, label, cx, std::round (capHeight (kLabelSize, Face::SansMedium)) + 2.0f, en ? labelStatic : frame, kLabelSize,
+                    juce::Justification::horizontallyCentred, Face::SansMedium);
+    // riquadro fisso: riempimento grigio dal minimo al valore, bordo da 1 px, il bordo inferiore colorato fino al valore
+    const auto box = boxArea();
+    const float v01 = juce::jlimit (0.0f, 1.0f, param->getValue());
+    const auto inner = box.reduced (1.0f);
+    g.setColour (en ? valueFill : valueFillOff); g.fillRect (inner.withWidth (std::round (inner.getWidth() * v01)));
+    g.setColour (! en ? frame : (isMouseOver() || dragging ? labelHover : ui::text));
+    outline (g, box);
+    // il bordo inferiore del riquadro è la linea del valore: nel colore del plugin fin dove arriva il parametro
+    const auto edge = getLocalBounds().toFloat().withTop ((float) getHeight() - 2.0f);
+    g.setColour (en ? col : frame); g.fillRect (edge.withWidth (std::round (edge.getWidth() * v01)));
+    // numero allineato a destra in uno spazio fisso centrato nel riquadro: non si sposta quando cambiano le cifre
+    const auto ink = makeValueInk (format ? format (param->convertFrom0to1 (param->getValue())) : num (param->getValue(), 2), kNumberSize, kUnitSize);
+    const float slotRight = std::round (cx + widestInk() * 0.5f);
+    const auto at = juce::AffineTransform::translation (slotRight - ink.width - ink.left, numberBaseline());
+    g.setColour (! en ? frame : (dragging ? col : (isMouseOver() ? juce::Colours::white : valueText)));
+    g.fillPath (ink.path, at);
+    g.setColour (! en ? frame : unitText);
+    g.fillPath (ink.unitPath, at);
+}
+
+void BigValue::setValue (float v)
+{
+    const auto r = param->getNormalisableRange();
+    param->setValueNotifyingHost (param->convertTo0to1 (juce::jlimit (r.start, r.end, v)));
+    repaint();
+}
+
+void BigValue::mouseDown (const juce::MouseEvent&)
+{
+    if (param == nullptr || ! isEnabled()) return;
+    dragging = true; startNorm = param->getValue();
+    param->beginChangeGesture();
+    repaint();
+}
+
+void BigValue::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! dragging) return;
+    const float d = (float) (e.getDistanceFromDragStartX() - e.getDistanceFromDragStartY());
+    param->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, startNorm + d * normPerPixel));
+    repaint();
+}
+
+void BigValue::mouseUp (const juce::MouseEvent&)
+{
+    if (! dragging) return;
+    dragging = false;
+    param->endChangeGesture();
+    repaint();
+}
+
+void BigValue::mouseDoubleClick (const juce::MouseEvent&)
+{
+    if (param == nullptr || ! isEnabled()) return;
+    if (dragging) { dragging = false; param->endChangeGesture(); }
+    param->beginChangeGesture();
+    param->setValueNotifyingHost (param->getDefaultValue());
+    param->endChangeGesture();
+    repaint();
+    const auto txt = format ? format (param->convertFrom0to1 (param->getValue())) : juce::String();
+    editor.onCommit = [this] (const juce::String& t)
+    {
+        param->beginChangeGesture();
+        setValue (InlineEditor::parseNumber (t));
+        param->endChangeGesture();
+    };
+    editor.start (*this, boxArea().reduced (2.0f).toNearestInt(), txt.trim());
+}
+
+void BigValue::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    const float d = std::abs (w.deltaY) > std::abs (w.deltaX) ? w.deltaY : -w.deltaX;
+    if (param == nullptr || ! isEnabled() || std::abs (d) <= 0.0f || ! step) return;
+    param->beginChangeGesture();
+    setValue (step (param->convertFrom0to1 (param->getValue()), d > 0 ? +1 : -1));
+    param->endChangeGesture();
+}
+
+// ============================================================================ TextToggle
+int TextToggle::getIdealWidth() const
+{
+    return (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, kControlTextSize), text)) + 24;
+}
+
+void TextToggle::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+    const bool on = isOn(), en = isEnabled();
+    if (on && en) { g.setColour (accentOf (*this)); g.fillRect (r); }
+    else { g.setColour (! en ? frame : (isMouseOver() ? labelHover : ui::text)); outline (g, r); }
+    drawLabel (g, text, getLocalBounds(), on && en ? onAccent : (! en ? frame : (isMouseOver() ? labelHover : selector)), kControlTextSize,
+               juce::Justification::centred, on ? Face::SansSemiBold : Face::SansRegular);
+}
+
+void TextToggle::mouseUp (const juce::MouseEvent& e)
+{
+    if (param == nullptr || ! isEnabled() || ! e.mouseWasClicked() || ! getLocalBounds().contains (e.getPosition())) return;
+    param->beginChangeGesture();
+    param->setValueNotifyingHost (isOn() ? 0.0f : 1.0f);
+    param->endChangeGesture();
+    repaint();
+}
+
+// ============================================================================ Section
+Section::Section (juce::String t, juce::RangedAudioParameter* onOff) : title (std::move (t)), onParam (onOff)
+{
+    if (onParam != nullptr) { power.bindTo (*onParam); addAndMakeVisible (power); }
+}
+
+void Section::add (const juce::String& rowLabel, juce::Component& c, int width)
+{
+    rows.push_back ({ rowLabel, &c, width });
+    addAndMakeVisible (c);
+}
+
+int Section::labelWidth() const
+{
+    int w = 0;
+    for (auto& r : rows) w = juce::jmax (w, (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansMedium, kLabelSize), r.label)));
+    return w;
+}
+
+int Section::getIdealWidth() const
+{
+    int ctl = 0;
+    for (auto& r : rows) ctl = juce::jmax (ctl, r.width);
+    const int lw = labelWidth();
+    const int titleW = (onParam != nullptr ? kBoxSize + kGapLabel : 0)
+                     + (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, kControlTextSize), title));
+    return juce::jmax (titleW, (lw > 0 ? lw + kGapLabel : 0) + ctl);
+}
+
+int Section::getIdealHeight() const { return kTitleH + (int) rows.size() * (kControlH + kRowGap); }
+
+void Section::resized()
+{
+    power.setBounds (juce::Rectangle<int> (0, 0, kBoxSize, kBoxSize).withCentre ({ kBoxSize / 2, kTitleH / 2 - 2 }).expanded (kHitPad));
+    const int lw = labelWidth();
+    int y = kTitleH + 4;
+    for (auto& r : rows)
+    {
+        r.comp->setBounds (lw > 0 ? lw + kGapLabel : 0, y, r.width, kControlH);
+        y += kControlH + kRowGap;
+    }
+}
+
+void Section::refresh()
+{
+    const bool on = isOn();
+    power.repaint();
+    if (on == lastOn) return;
+    lastOn = on;
+    for (auto& r : rows) r.comp->setEnabled (on);
+    repaint();
+}
+
+void Section::paint (juce::Graphics& g)
+{
+    const bool on = isOn();
+    const float tx = onParam != nullptr ? (float) (kBoxSize + kGapLabel) : 0.0f;
+    // titolo del gruppo: più chiaro e più marcato delle etichette, grigio scuro quando il gruppo è spento
+    drawAtBaseline (g, title, tx, (float) kTitleH / 2.0f - 2.0f + capHeight (kControlTextSize, Face::SansSemiBold) * 0.5f,
+                    on ? titleName : labelStatic, kControlTextSize, juce::Justification::left, Face::SansSemiBold);
+    int y = kTitleH + 4;
+    for (auto& r : rows)
+    {
+        if (r.label.isNotEmpty())
+            drawLabel (g, r.label, { 0, y, labelWidth(), kControlH }, on ? labelStatic : frame, kLabelSize);
+        y += kControlH + kRowGap;
+    }
+}
+
 // ============================================================================ AboutOverlay
 AboutOverlay::AboutOverlay (juce::Component& editor, const juce::String& n)
     : ed (editor), name (n), text (aboutText (n))
@@ -552,7 +763,7 @@ void AboutOverlay::paint (juce::Graphics& g)
     };
     put ("b", Face::SansBold, col, 18.0f); put ("-", Face::SansLight, titleDash, 18.0f); put ("suite", Face::SansMedium, titleName, 18.0f);
     y += 24.0f;
-    drawAtBaseline (g, juce::String (juce::CharPointer_UTF8 ("crafted in Italy  \xc2\xb7  built with Claude")), x, y, info, kInfoSize, juce::Justification::left, Face::SansRegular);
+    drawAtBaseline (g, juce::String (juce::CharPointer_UTF8 ("free and open source  \xc2\xb7  built with Claude Code")), x, y, info, kInfoSize, juce::Justification::left, Face::SansRegular);
     if (const auto v = updates::versionLabel (updates::currentVersion()); v.isNotEmpty())
         drawAtBaseline (g, "version " + v, x + w, y, info, kInfoSize, juce::Justification::right, Face::MonoRegular);
     downloadArea = {};

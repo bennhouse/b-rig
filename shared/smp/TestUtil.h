@@ -31,6 +31,24 @@ inline bool checkFixedValueBoxes (juce::Component& root, juce::String& report)
                 report << p->getName (40) << ": " << wMin << "-" << wMax << " px (box " << w0 << ")  ";
             }
         }
+        if (auto* bv = dynamic_cast<BigValue*> (&c); bv != nullptr && bv->getParameter() != nullptr && bv->isVisible())
+        {
+            auto* p = bv->getParameter();
+            const float saved = p->getValue();
+            int wMin = 1 << 30, wMax = 0;
+            for (int i = 0; i <= 64; ++i)
+            {
+                p->setValueNotifyingHost ((float) i / 64.0f);
+                const int w = bv->getIdealWidth();
+                wMin = std::min (wMin, w); wMax = std::max (wMax, w);
+            }
+            p->setValueNotifyingHost (saved);
+            if (wMin != wMax || bv->getWidth() < wMax)
+            {
+                ok = false;
+                report << p->getName (40) << " (grande): " << wMin << "-" << wMax << " px (box " << bv->getWidth() << ")  ";
+            }
+        }
         for (auto* ch : c.getChildren()) visit (*ch);
     };
     visit (root);

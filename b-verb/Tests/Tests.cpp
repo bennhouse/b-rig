@@ -107,7 +107,7 @@ int main()
     {
         auto lvl = [&] (float duck)
         {
-            auto p = mk ({ { BVerbIDs::duck, duck }, { BVerbIDs::mix, 50.0f } });
+            auto p = mk ({ { BVerbIDs::duck, duck }, { BVerbIDs::duckOn, 1.0f }, { BVerbIDs::mix, 50.0f } });
             auto y = run (*p, (int) sr, [] (int i) { return (float) (0.5 * std::sin (tp * 220.0 * i / sr)); });
             return rmsDb (y, 0, 36000, 48000);
         };

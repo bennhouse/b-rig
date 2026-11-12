@@ -6,6 +6,7 @@
 // una fila di quadrati, uno per plugin nel suo colore, in ordine di catena; in basso a destra la firma.
 // Il testo è convertito in tracciati: l'SVG si vede uguale anche senza i font IBM Plex.
 //   ./build/BSuiteLogo_artefacts/Release/BSuiteLogo ../docs [cartella per le anteprime PNG]
+// e la vetrina dei plugin (vedi showcase più sotto).
 #include "smp/Theme.h"
 #include <cstdio>
 
@@ -94,7 +95,7 @@ void addStrip (Scene& s, float cx, float y, float width, float gap)
 // firma in basso a destra
 void addSignature (Scene& s, float size, float margin)
 {
-    juce::Path p; textPath (p, juce::String (juce::CharPointer_UTF8 ("crafted in Italy  \xc2\xb7  built with Claude")), Face::SansRegular, size);
+    juce::Path p; textPath (p, juce::String (juce::CharPointer_UTF8 ("free and open source  \xc2\xb7  built with Claude Code")), Face::SansRegular, size);
     const auto b = p.getBounds();
     s.add (moved (p, s.w - margin - b.getRight(), s.h - margin - b.getBottom()), info);
 }
@@ -155,8 +156,85 @@ Scene icon()
 }
 }
 
+// Vetrina a schermo intero: le schermate dei plugin incastrate in righe giustificate (ogni riga riempie la larghezza,
+// le immagini mantengono le proporzioni), margini uguali, sfondo che sfuma dall'alto verso il basso.
+//   BSuiteLogo --showcase uscita.png larghezza altezza img1.png img2.png ...
+int showcase (int argc, char** argv)
+{
+    const auto cwd = juce::File::getCurrentWorkingDirectory();
+    const auto out = cwd.getChildFile (argv[2]);
+    const int W = juce::String (argv[3]).getIntValue(), H = juce::String (argv[4]).getIntValue();
+    std::vector<juce::Image> imgs;
+    for (int i = 5; i < argc; ++i)
+    {
+        auto im = juce::ImageFileFormat::loadFrom (cwd.getChildFile (argv[i]));
+        if (im.isValid()) imgs.push_back (im); else std::printf ("salto %s\n", argv[i]);
+    }
+    if (imgs.empty()) return 1;
+    const float margin = (float) W * 0.035f, gap = (float) W * 0.009f;
+    const float availW = (float) W - 2.0f * margin, availH = (float) H - 2.0f * margin;
+    const int n = (int) imgs.size();
+    auto aspect = [&] (int i) { return (float) imgs[(size_t) i].getWidth() / (float) imgs[(size_t) i].getHeight(); };
+    // righe: per ogni numero di righe si dividono le immagini (in ordine) con somme di proporzioni simili,
+    // ogni riga alta quanto serve per riempire la larghezza; si sceglie l'altezza totale più vicina allo spazio
+    std::vector<std::vector<int>> best; float bestErr = 1.0e9f;
+    for (int rows = 2; rows <= 7; ++rows)
+    {
+        float total = 0; for (int i = 0; i < n; ++i) total += aspect (i);
+        std::vector<std::vector<int>> part (1);
+        float acc = 0;
+        for (int i = 0; i < n; ++i)
+        {
+            const float a = aspect (i);
+            if (! part.back().empty() && (int) part.size() < rows && acc + a * 0.5f > total / (float) rows * (float) part.size())
+                part.emplace_back();
+            part.back().push_back (i); acc += a;
+        }
+        float h = 0;
+        for (auto& r : part) { float sa = 0; for (int i : r) sa += aspect (i); h += (availW - gap * (float) (r.size() - 1)) / sa; }
+        h += gap * (float) (part.size() - 1);
+        const float err = h > availH ? (h - availH) * 1.5f : availH - h;   // meglio un po' più piccolo che tagliato
+        if (err < bestErr) { bestErr = err; best = part; }
+    }
+    // scala unica se le righe non entrano in altezza, poi tutto centrato
+    std::vector<float> rowH; float totalH = 0;
+    for (auto& r : best) { float sa = 0; for (int i : r) sa += aspect (i); rowH.push_back ((availW - gap * (float) (r.size() - 1)) / sa); totalH += rowH.back(); }
+    totalH += gap * (float) (best.size() - 1);
+    const float k = juce::jmin (1.0f, availH / totalH);
+    juce::Image canvas (juce::Image::RGB, W, H, true);
+    {
+        juce::Graphics g (canvas);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a2a2a), 0.0f, 0.0f, juce::Colour (0xff080808), 0.0f, (float) H, false));
+        g.fillAll();
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        float y = ((float) H - totalH * k) * 0.5f;
+        for (size_t r = 0; r < best.size(); ++r)
+        {
+            const float h = rowH[r] * k;
+            float rowW = 0; for (int i : best[r]) rowW += aspect (i) * h;
+            rowW += gap * (float) (best[r].size() - 1);
+            float x = ((float) W - rowW) * 0.5f;
+            for (int i : best[r])
+            {
+                const auto dst = juce::Rectangle<float> (x, y, aspect (i) * h, h);
+                juce::DropShadow (juce::Colours::black.withAlpha (0.45f), (int) (gap * 1.2f), { 0, (int) (gap * 0.3f) }).drawForRectangle (g, dst.toNearestInt());
+                g.drawImage (imgs[(size_t) i], dst);
+                g.setColour (juce::Colour (0xff2a2a2a)); g.drawRect (dst, 1.0f);
+                x += dst.getWidth() + gap;
+            }
+            y += h + gap;
+        }
+    }
+    out.deleteFile();
+    juce::FileOutputStream os (out);
+    const bool ok = os.openedOk() && juce::PNGImageFormat().writeImageToStream (canvas, os);
+    std::printf ("%s %s (%d immagini, %d righe)\n", ok ? "scritto" : "ERRORE", out.getFullPathName().toRawUTF8(), n, (int) best.size());
+    return ok ? 0 : 1;
+}
+
 int main (int argc, char** argv)
 {
+    if (argc > 4 && juce::String (argv[1]) == "--showcase") { juce::ScopedJuceInitialiser_GUI gui; return showcase (argc, argv); }
     juce::ScopedJuceInitialiser_GUI init;
     const auto cwd = juce::File::getCurrentWorkingDirectory();
     const auto dir = cwd.getChildFile (argc > 1 ? argv[1] : "docs");

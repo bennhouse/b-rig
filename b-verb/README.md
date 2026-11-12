@@ -18,13 +18,19 @@ All controls glide (about 15 ms), so moving them does not click.
 
 ## Controls
 
-The controls are grouped by what they do, most important first:
+The window has three levels, from the most important down:
 
-- **Top right**, the two modes: `freeze` and `type` (room, plate, hall, spring, shimmer).
-- **Top row**, the space and how much of it you hear: `size` (0-100 %), `decay` (0.10-20.00 s), `predelay` (0-200 ms), `early` (0-100 %), `mix`.
-- **Left of the graph**, the colour of the tail: `damp` (1-16 kHz), `locut` (20-500 Hz), `hicut` (1-20 kHz), then `mod`.
-- **Right of the graph**, image and level: `width`, `duck`, `output`.
+- **Top right:** `type` (room, plate, hall, spring, shimmer).
+- **Big values**, each centred in its own column in a fixed box: the number never moves when its digits change (it is right-aligned in a slot as wide as the longest value), the grey fill and the box's bottom edge in the plugin's colour show where the value sits in its range: `size` (0-100 %), `decay` (0.10-20.00 s), `predelay` (0-200 ms), the `freeze` button and `mix`. Drag (right or up for more), use the wheel, or double-click to reset and type a value.
 - **The graph** (0 to −60 dB over time, in seconds once the tail passes 1 s): the early reflections as vertical bars (moved by `predelay`, as tall as `early`), the decay of the body as a filled area and, as a thin line, the decay at 8 kHz (shorter because of `damp`), both from the same formula as the loop. On the right, outside the time axis, two live meters: `IN` (grey) and `WET` (cyan).
+- **Groups** at the bottom, in equal columns with a thin line between them. The optional ones have an on/off box next to the title; when a group is off its title and labels turn dark grey and its controls are disabled:
+  - **early** (on/off): `level` of the early reflections.
+  - **tone**: `damp` (1-16 kHz), `locut` (20-500 Hz), `hicut` (1-20 kHz).
+  - **modulation** (on/off): `depth`.
+  - **duck** (on/off, off by default): `amount`, how much the wet drops while you play.
+  - **output**: `width`, `output`.
+
+Switching a group on or off glides, so it never clicks. Projects saved before the on/off boxes open with `duck` on if it was already in use.
 
 ## Measured (see `Tests/Tests.cpp`)
 
@@ -39,7 +45,7 @@ The controls are grouped by what they do, most important first:
 
 ## About panel
 
-Click the b-verb logo for a short description of the plugin, signed b-suite (crafted in Italy, built with Claude). Click anywhere or press Esc to close. Inside b-rig the plugin has no title or about panel and its top row is centred.
+Click the b-verb logo for a short description of the plugin, signed b-suite (free and open source, built with Claude Code). Click anywhere or press Esc to close. Inside b-rig the plugin has no title or about panel and its top row is centred.
 
 ## Updates
 
@@ -59,4 +65,4 @@ On macOS the AU/VST3 are copied to `~/Library/Audio/Plug-Ins` after the build. T
 
 ## Credits
 
-Fonts: [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License (`../shared/Resources/OFL-IBMPlex.txt`). Built with [JUCE](https://juce.com), which is dual-licensed: AGPLv3 or commercial. Choose this project's license accordingly before publishing.
+Fonts: [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License (`../shared/Resources/OFL-IBMPlex.txt`). Built with [JUCE](https://juce.com) (AGPLv3). b-suite is free software under the GNU AGPLv3: see `../LICENSE`.

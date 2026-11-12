@@ -67,7 +67,7 @@ int main()
     // 5. tutti i tipi con feedback 110 %: auto-oscillazione limitata, nessun NaN
     for (int t = 0; t < 5; ++t)
     {
-        auto p = mk ({ { BDelayIDs::type, (float) t }, { BDelayIDs::feedback, 110.0f }, { BDelayIDs::time, 120.0f }, { BDelayIDs::smear, 50.0f } });
+        auto p = mk ({ { BDelayIDs::type, (float) t }, { BDelayIDs::feedback, 110.0f }, { BDelayIDs::time, 120.0f }, { BDelayIDs::smear, 50.0f }, { BDelayIDs::smearOn, 1.0f } });
         auto y = run (*p, (int) (sr * 5), [] (int i) { return i < 4800 ? pluck (i, 220.0) : 0.0f; });
         float pk = 0; bool fin = true;
         for (int i = 0; i < y.getNumSamples(); ++i) for (int c = 0; c < 2; ++c) { fin &= std::isfinite (y.getSample (c, i)); pk = std::max (pk, std::abs (y.getSample (c, i))); }
@@ -124,6 +124,30 @@ int main()
         std::printf ("       %s: 4 kHz rispetto a 500 Hz, eco a 100 ms %.1f dB, a 800 ms %.1f dB\n", type == BDelayProcessor::Bbd ? "bbd" : "tape", shortT, longT);
         check (shortT - longT > (type == BDelayProcessor::Bbd ? 15.0 : 3.0), "ritardo lungo = ripetizioni più scure (clock / velocità del nastro)", shortT - longT);
     }
+    // 7c. on/off dei gruppi: spegnere la modulazione mentre suona non fa click; vecchi progetti con smear e duck in uso
+    //     si riaprono con i gruppi accesi
+    {
+        auto p = mk ({ { BDelayIDs::time, 300.0f }, { BDelayIDs::feedback, 40.0f }, { BDelayIDs::mod, 100.0f }, { BDelayIDs::modOn, 1.0f } });
+        auto sine = [] (int i) { return (float) (0.3 * std::sin (tp * 220.0 * i / sr)); };
+        run (*p, 48000, sine);
+        setP (p->apvts, BDelayIDs::modOn, 0.0f);
+        auto b = run (*p, 24000, [&] (int i) { return sine (48000 + i); });
+        float d1 = 0, d2 = 0;
+        for (int i = 2; i < 24000; ++i)
+        {
+            const float a0 = b.getSample (0, i), a1 = b.getSample (0, i - 1), a2 = b.getSample (0, i - 2);
+            d1 = std::max (d1, std::abs (a0 - a1)); d2 = std::max (d2, std::abs (a0 - 2 * a1 + a2));
+        }
+        check (d2 < 0.3f * d1, "modulation spenta mentre suona: niente click", d2 / d1);
+        auto old = mk ({});
+        juce::ValueTree t ("BDelay");
+        for (auto [id, val] : { std::pair<const char*, float> { BDelayIDs::smear, 30.0f }, { BDelayIDs::duck, 20.0f } })
+            t.appendChild (juce::ValueTree ("PARAM").setProperty ("id", id, nullptr).setProperty ("value", val, nullptr), nullptr);
+        juce::MemoryBlock mb; old->copyXmlToBinary (*t.createXml(), mb);
+        old->setStateInformation (mb.getData(), (int) mb.getSize());
+        check (old->apvts.getRawParameterValue (BDelayIDs::smearOn)->load() > 0.5f && old->apvts.getRawParameterValue (BDelayIDs::duckOn)->load() > 0.5f,
+               "progetti di prima: smear e duck in uso restano accesi");
+    }
     // 8. mix 0: il dry passa identico
     {
         auto p = mk ({ { BDelayIDs::mix, 0.0f } });
@@ -133,7 +157,7 @@ int main()
     }
     // 9. CPU
     {
-        auto p = mk ({ { BDelayIDs::type, 1.0f }, { BDelayIDs::smear, 50.0f }, { BDelayIDs::mod, 50.0f } });
+        auto p = mk ({ { BDelayIDs::type, 1.0f }, { BDelayIDs::smear, 50.0f }, { BDelayIDs::smearOn, 1.0f }, { BDelayIDs::mod, 50.0f } });
         const double cpu = cpuPercent (*p, [] (int i) { return pluck (i, 110.0); });
         std::printf ("       CPU (tape, smear, mod): %.3f %% di un core\n", cpu);
         check (cpu < 2.0, "CPU sotto il 2 % di un core", cpu);

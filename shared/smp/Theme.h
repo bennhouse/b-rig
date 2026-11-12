@@ -42,6 +42,7 @@ namespace ui
     inline const juce::Colour gridZero    { 0xff303030 };   // linea dello 0
     inline const juce::Colour valueFill   { 0xff2c2c2c };   // barra di riempimento dei controlli numerici (min a sinistra, max a destra)
     inline const juce::Colour valueFillOff{ 0xff1c1c1c };   // la stessa barra con il controllo disattivato
+    inline const juce::Colour separator   { 0xff2a2a2a };   // linea sottile tra gruppi di controlli
     inline const juce::Colour editHighlight { 0xffc8c8c8 }; // selezione del testo nella modifica a tastiera (chiaro neutro)
     // Colore di accento: lo definisce ogni plugin nel suo CMakeLists (SMP_ACCENT_ARGB).
     inline const juce::Colour accent      { (juce::uint32) SMP_ACCENT_ARGB };
@@ -166,17 +167,21 @@ namespace ui
 
     // Valore con unità: numero in Plex Mono Medium, unità in Plex Mono Regular 1 px più piccola.
     // "15.42 ms" -> "15.42" + "ms"; "61 / 39" resta tutto numero.
-    inline InkText makeValueInk (const juce::String& s)
+    inline InkText makeValueInk (const juce::String& s, float valueSize = kValueSize, float unitSize = kUnitSize)
     {
         const int sp = s.lastIndexOfChar (' ');
         const auto tail = sp > 0 ? s.substring (sp + 1) : juce::String();
         const bool hasUnit = tail.isNotEmpty() && ! tail.containsAnyOf ("0123456789");
-        if (! hasUnit) return makeInkText (s, kValueSize, Face::MonoMedium);
+        if (! hasUnit) return makeInkText (s, valueSize, Face::MonoMedium);
 
-        InkText t = makeInkText (s.substring (0, sp), kValueSize, Face::MonoMedium);
-        const float numberAdvance = juce::GlyphArrangement::getStringWidth (face (Face::MonoMedium, kValueSize), s.substring (0, sp + 1));
+        InkText t = makeInkText (s.substring (0, sp), valueSize, Face::MonoMedium);
+        // dopo il numero lo spazio della misura dell'unità (nei valori grandi il numero non si allontana dall'unità)
+        const float numberAdvance = juce::GlyphArrangement::getStringWidth (face (Face::MonoMedium, valueSize), s.substring (0, sp))
+                                  + juce::GlyphArrangement::getStringWidth (face (Face::MonoRegular, unitSize), " ") * (valueSize > kValueSize + 4.0f ? 0.6f : 1.0f)
+                                  + (valueSize > kValueSize + 4.0f ? 0.0f : juce::GlyphArrangement::getStringWidth (face (Face::MonoMedium, valueSize), " ")
+                                                                           - juce::GlyphArrangement::getStringWidth (face (Face::MonoRegular, unitSize), " "));
         juce::GlyphArrangement ga;
-        ga.addLineOfText (face (Face::MonoRegular, kUnitSize), tail, numberAdvance, 0.0f);
+        ga.addLineOfText (face (Face::MonoRegular, unitSize), tail, numberAdvance, 0.0f);
         ga.createPath (t.unitPath);
         const auto all = t.path.getBounds().getUnion (t.unitPath.getBounds());
         t.left = all.getX();

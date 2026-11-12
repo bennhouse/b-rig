@@ -1,16 +1,21 @@
 <p align="center"><img src="docs/b-suite-banner.svg" alt="b-suite" width="760"></p>
 
-Plugins (VST3 / AU) and a standalone app for recording electric guitar at home. From the raw DI to a mix that still holds up on a phone speaker.
+Free and open-source plugins (VST3 / AU) and a standalone app for recording electric guitar: from the raw DI to a mix that still holds up on a phone speaker.
 
-Crafted in Italy with love 🇮🇹 · **Status:** beta.
+Use them, study them, change them, ship your own versions. Everything is here: the DSP, the interfaces, the shared design system, the tests and the installer scripts.
 
-## How it was made
+**License:** [GNU AGPLv3](LICENSE) · **Status:** beta
 
-I didn't write the C++ myself: the whole suite was written with Claude Code. The ideas, the sound and the choices are mine.
+## What you get
 
-Every plugin started as a small annoyance while recording: a DI that hisses, palm mutes that turn to mush, a cab that doesn't feel like a real one in headphones, a guitar flattened by Instagram's compression. So each one does one job, and shows you what it's doing.
+- 20 plugins and a standalone app that runs them without a DAW.
+- Each plugin does one job and shows what it is doing on a live display. No fake knobs or screws: dark, flat, one colour per plugin.
+- Readable code: one folder per plugin, a short `README.md` with every control and the numbers measured by its tests.
+- A shared design system in `shared/smp` (fonts, colours, controls, window layout), so a new plugin looks like the rest from the first build.
 
-No fake knobs or screws. Dark, flat, one colour per plugin and a live display. Click any logo to find out what that plugin is for.
+The code was written with Claude Code, and so can your changes: the repository is laid out so that a person or an AI assistant can find their way around quickly.
+
+<p align="center"><img src="docs/b-suite-showcase.png" alt="All the b-suite plugins" width="100%"></p>
 
 ## The plugins
 
@@ -79,11 +84,23 @@ cmake --build build
 
 On macOS the plugins are copied to `~/Library/Audio/Plug-Ins` after the build and show up in Logic Pro under "b-suite". Each folder also builds a test program that measures the sound and saves screenshots of the interface.
 
+## Make it yours
+
+- **Change a plugin:** edit its `Source/`, rebuild, run its test program. The tests measure the sound (levels, timing, decay, CPU) and save screenshots of the interface to `build/`.
+- **Make a new plugin:** copy a small one (b-tight, b-verb) and rename it. `shared/smp/Shell.h` gives you the title, the frame, the value boxes and the about panel; `shared/smp/Filters.h` the common filters.
+- **Put it in b-rig:** add `b-rig/Source/Modules/Mod_<name>.cpp` like the others and an entry in `Modules.cpp`. b-rig builds every module from the plugin's own sources, so a plugin change reaches the app at the next build.
+- **Contribute back:** issues and pull requests are welcome. Keep one change per pull request and run the tests of what you touched.
+
+## License
+
+b-suite is free software under the [GNU Affero General Public License v3](LICENSE): you can use it, modify it and redistribute it, also commercially, as long as what you distribute stays under the same license with its source available. JUCE is used under its AGPLv3 option. The IBM Plex fonts are under the SIL Open Font License (`shared/Resources/OFL-IBMPlex.txt`).
+
 ## Releases and updates
 
-- New b-rig version: `tools/release.sh b-rig 0.2.0`. It sets the version, tags it and pushes; GitHub builds the installers and publishes the release.
-- b-rig and the plugins check for a new version once a day. If there is one, a small notice shows up in the corner; click it and the about panel opens with a download button.
+- Releases are on the GitHub releases page, one tag per product: `b-rig-v0.2.0`, `b-amp-v0.1.3`... During the beta they are marked as pre-releases.
+- To publish a new b-rig version: `tools/release.sh b-rig 0.2.0`. It sets the version, tags it and pushes; GitHub builds the installers for macOS and Windows and publishes the release.
+- b-rig and the plugins check for a new version once a day. If there is one, a small notice shows up in the corner; click it and the about panel opens with a download button. The check is an anonymous request to the GitHub releases.
 
-## Logo
+## Logo and images
 
-`docs/` has the logo in three sizes: the banner above, a full-screen version (1920 × 1080) and a square icon (1024 × 1024). One square per plugin, in the order of the chain.
+`docs/` has the logo in three sizes (the banner above, a full-screen version at 1920 × 1080 and a square icon at 1024 × 1024, one square per plugin in the order of the chain) and the showcase with every plugin (3840 × 2160). All of them are generated: the logos by `BSuiteLogo` in b-rig, the showcase by `tools/make-showcase.sh` from the screenshots the tests save. Use them freely.

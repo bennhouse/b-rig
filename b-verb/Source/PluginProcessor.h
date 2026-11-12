@@ -37,6 +37,10 @@ namespace BVerbIDs
     inline constexpr const char* stereo   = "stereo";
     inline constexpr const char* freeze   = "freeze";
     inline constexpr const char* output   = "output";
+    // gruppi accesi / spenti dall'interfaccia (gli altri valori restano com'erano)
+    inline constexpr const char* earlyOn  = "earlyOn";
+    inline constexpr const char* modOn    = "modOn";
+    inline constexpr const char* duckOn   = "duckOn";
 }
 
 class BVerbProcessor final : public juce::AudioProcessor
@@ -93,7 +97,7 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void control() noexcept;   // ogni 32 campioni
-    std::array<std::atomic<float>*, 14> raw {};
+    std::array<std::atomic<float>*, 17> raw {};
     float prm (int i) const noexcept { return raw[(size_t) i]->load(); }
 
     double fs = 48000.0;
@@ -114,7 +118,7 @@ private:
     sp::Svf springLp;
     // modulazione: oscillatori in quadratura (niente seno per campione)
     std::array<float, kLines> oscS {}, oscC {}, oscK {};
-    float modDepth = 0;
+    float modDepth = 0, modDepthT = 0;
     // shimmer
     std::vector<float> shBuf = std::vector<float> (1 << 15, 0.0f);
     int shPos = 0;
