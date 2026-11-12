@@ -2,30 +2,34 @@
 
 A reverb for any source (guitar, voice, synth): room, plate, hall, spring and shimmer.
 
-**Formats:** AU, VST3 · **Platforms:** macOS (universal); Windows/Linux via the same CMake project · **Latency:** 0 samples · **Channels:** mono or stereo in, stereo out · **CPU:** about 0.4 % of one core (shimmer)
+**Formats:** AU, VST3 · **Platforms:** macOS (universal); Windows/Linux via the same CMake project · **Latency:** 0 samples · **Channels:** mono or stereo in, stereo out · **CPU:** about 0.5 % of one core (shimmer)
 
 ## How it works
 
 1. **Predelay** (0-200 ms): one circular buffer per channel; the early reflections are read from the same buffer.
-2. **Early reflections:** 10 taps per channel with a different pattern left and right, spread by `size` and set by `early`. Their level depends on the type: strong in `room`, light in `hall` and `shimmer`, almost none in `plate`, none in `spring`.
+2. **Early reflections:** 10 taps per channel with a different pattern left and right, spread by `size` and set by `early`. Their level depends on the type: strong in `room`, light in `hall` and `shimmer`, almost none in `plate`, none in `spring`. Walls and air absorb the highs, so the reflections pass a low-pass that depends on the type: 4.5 kHz in a hall, 6.5 kHz in a room, 12 kHz on a plate.
 3. **Diffusion:** 4 Schroeder all-passes in series, denser in `plate` (instant, dense attack), softer in `hall` (the tail builds up). `spring` instead runs the input through 24 first-order all-passes in cascade (dispersion, the "drip/chirp" of real springs) and a 4.5 kHz low-pass.
-4. **Tail:** a feedback delay network of 8 lines mixed by an 8×8 Hadamard matrix (a fast transform: only sums and differences). The line lengths are mutually prime and scale with `size` and the type. Each line's feedback gives exactly −60 dB in `decay` seconds. `damp` is an absorbent filter inside the loop: above that frequency the tail lasts half as long, as in a real room. `mod` slowly moves the line lengths (quadrature oscillators, no sine per sample) against metallic ringing.
+4. **Tail:** a feedback delay network of 8 lines mixed by an 8×8 Hadamard matrix (a fast transform: only sums and differences). The line lengths are mutually prime and scale with `size` and the type. Each line ends in a first-order absorbent shelf: below `damp` its gain gives exactly −60 dB in `decay` seconds, above `damp` it is the square of that, so the highs last exactly half as long, as in a real room. `mod` slowly moves the line lengths (quadrature oscillators, no sine per sample) against metallic ringing; the lines are read with 4-point Hermite interpolation, so moving them does not dull the highs on every pass as linear interpolation would.
 5. **Shimmer:** inside the loop, a two-head pitch shifter (60 ms grains) adds the octave above at 25 %, so every pass climbs higher.
 6. **Freeze:** feedback 1, no damping and no new input: the tail holds as an endless pad.
-7. **Output:** `locut` and `hicut` on the wet, `stereo` width (mid/side), `duck` (the wet drops by up to 17 dB while the dry is loud and comes back in the pauses), `mix` (the dry stays full up to 50 %) and `output`.
+7. **Output:** `locut` and `hicut` on the wet, `width` (mid/side), `duck` (the wet drops by up to 17 dB while the dry is loud and comes back in the pauses), `mix` (the dry stays full up to 50 %) and `output`.
 
 All controls glide (about 15 ms), so moving them does not click.
 
 ## Controls
 
-- `type` (room, plate, hall, spring, shimmer), top right.
-- Top row in the frame: `decay` (0.10-20.00 s), `predelay` (0-200 ms), `size` (0-100 %), `locut` (20-500 Hz), `hicut` (1-20 kHz), `mix`.
-- Left of the graph: `early`, `damp` (1-16 kHz), `mod`. Right of the graph: `duck`, `stereo`, `freeze`, `output`.
-- The graph (0 to −60 dB over time): the early reflections as vertical bars (moved by `predelay`, as tall as `early`), the decay line of the body and, lighter, the decay at 8 kHz (shorter because of `damp`), the wet band, and the live input (grey) and wet level (cyan).
+The controls are grouped by what they do, most important first:
+
+- **Top right**, the two modes: `freeze` and `type` (room, plate, hall, spring, shimmer).
+- **Top row**, the space and how much of it you hear: `size` (0-100 %), `decay` (0.10-20.00 s), `predelay` (0-200 ms), `early` (0-100 %), `mix`.
+- **Left of the graph**, the colour of the tail: `damp` (1-16 kHz), `locut` (20-500 Hz), `hicut` (1-20 kHz), then `mod`.
+- **Right of the graph**, image and level: `width`, `duck`, `output`.
+- **The graph** (0 to −60 dB over time, in seconds once the tail passes 1 s): the early reflections as vertical bars (moved by `predelay`, as tall as `early`), the decay of the body as a filled area and, as a thin line, the decay at 8 kHz (shorter because of `damp`), both from the same formula as the loop. On the right, outside the time axis, two live meters: `IN` (grey) and `WET` (cyan).
 
 ## Measured (see `Tests/Tests.cpp`)
 
-- RT60 measured around 700 Hz: 0.80 s for `decay` 0.8 s, 2.29 s for 2.4 s, 5.65 s for 6 s.
+- RT60 measured around 500 Hz: 0.82 s for `decay` 0.8 s, 2.33 s for 2.4 s, 5.94 s for 6 s (within 3 %).
+- `damp` 3 kHz, `decay` 3 s: RT60 at 6 kHz measured 1.64 s, predicted 1.67 s.
 - `predelay` 50 ms: nothing comes out before 50 ms.
 - `mix` 0: the output is identical to the input.
 - `freeze`: the tail is within 2 dB after 5 s.

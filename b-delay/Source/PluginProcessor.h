@@ -3,8 +3,12 @@
 // interpolazione Hermite a 4 punti: cambiando il tempo le ripetizioni cambiano altezza come su un nastro, senza click.
 // Tutto il carattere sta DENTRO il loop di feedback, così ogni eco si consuma un po' più del precedente:
 //   digital - ripetizioni pulite
-//   tape    - saturazione morbida (compressione dei picchi), passa-basso a 9 kHz, wow (0,5 Hz) e flutter (6 Hz)
-//   bbd     - bucket brigade: passa-basso a 2,8 kHz (2° ordine), saturazione leggera, ripetizioni scure
+//   tape    - saturazione morbida (compressione dei picchi), wow (0,5 Hz) e flutter (6 Hz), passa-basso del 2° ordine
+//             che segue la velocità del nastro (perdita di testina): 14 kHz fino a 120 ms, 6,6 kHz a 400 ms,
+//             4,5 kHz a 800 ms, come un'eco a nastro che rallenta per allungare il tempo
+//   bbd     - bucket brigade (4096 celle): il clock scende quando il ritardo cresce, quindi la banda si stringe
+//             (passa-basso del 4° ordine a 0,4 volte il clock: 8 kHz a 100 ms, 2,7 kHz a 300 ms, 900 Hz a 1 s);
+//             saturazione leggera
 //   lofi    - campioni tenuti (circa 12 kHz) e 8 bit, banda 300 Hz-3 kHz
 //   reverse - due testine leggono all'indietro grani lunghi quanto il tempo di delay, incrociate a coseno
 // Nel loop anche locut / hicut, "smear" (4 passa-tutto che diffondono gli attacchi a ogni giro), modulazione
@@ -84,6 +88,11 @@ private:
     float prm (int i) const noexcept { return raw[(size_t) i]->load(); }
     float readHermite (const std::vector<float>& b, float delay) const noexcept;
     float character (int ch, float x) noexcept;   // il carattere del tipo, dentro il loop
+    void updateCharacter() noexcept;                // filtri di tape e bbd dal ritardo attuale
+public:
+    // frequenza di taglio del carattere per un ritardo (tape, bbd; 0 = nessun filtro): per il loop, il grafico e i test
+    static float characterHz (int type, float delayMs) noexcept;
+private:
 
     double fs = 48000.0;
     static constexpr int kBuf = 1 << 19;
@@ -94,8 +103,10 @@ private:
     std::array<std::array<float, 2>, 2> revPhase {};
     // filtri nel loop
     std::array<sp::Svf, 2> lo, hi, bbd1, bbd2, lofiHp, lofiLp;
-    std::array<float, 2> tapeLp {}, holdV {};
-    int holdN = 0;
+    std::array<float, 2> holdV {};
+    std::array<sp::Svf, 2> tapeF;                 // passa-basso del nastro, per canale
+    std::array<float, 2> tapeHz {}, bbdHz {};     // frequenze impostate (si aggiornano a ogni blocco col ritardo)
+    int holdN = 0, hold = 4;
     struct Ap { std::vector<float> b; int pos = 0, len = 1; };
     std::array<std::array<Ap, 4>, 2> smearAp;
     // modulazione (oscillatori in quadratura)

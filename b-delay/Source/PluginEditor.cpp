@@ -40,17 +40,23 @@ void DelayGraph::paint (juce::Graphics& g)
     auto v = [&] (const char* id) { return s.getRawParameterValue (id)->load(); };
     const auto all = getLocalBounds().toFloat();
     const auto plot = all.withTrimmedBottom (18.0f).withTrimmedLeft (18.0f).reduced (0.0f, 1.0f);
-    constexpr float kMaxMs = 2000.0f;
-    auto xOf = [&] (float ms) { return plot.getX() + plot.getWidth() * ms / kMaxMs; };
+    // finestra dei tempi: la più corta (250 ms ... 2 s) che mostra almeno quattro ripetizioni del canale più lento
+    const float slowest = juce::jmax (proc.msL.load(), proc.msR.load());
+    float windowMs = 2000.0f;
+    for (float w : { 250.0f, 500.0f, 1000.0f }) if (slowest * 4.0f <= w) { windowMs = w; break; }
+    const int divisions = windowMs > 1500.0f ? 8 : 10;   // passi tondi: 25, 50, 100, 250 ms
+    const float gridStep = windowMs / (float) divisions;
+    auto xOf = [&] (float ms) { return plot.getX() + plot.getWidth() * ms / windowMs; };
     const float mid = std::round (plot.getCentreY()), half = plot.getHeight() * 0.5f - 6.0f;
 
-    for (float t = 0.0f; t <= kMaxMs; t += 250.0f)
+    for (int k = 0; k <= divisions; ++k)
     {
+        const float t = gridStep * (float) k;
         g.setColour (gridLine);
         g.fillRect (std::round (xOf (t)), plot.getY(), kLine, plot.getHeight());
-        if (std::fmod (t, 500.0f) < 1.0f)
-            drawAtBaseline (g, t == 0.0f ? juce::String ("0") : juce::String ((int) t) + " ms", xOf (t), all.getBottom() - 4.0f, info, kAxisSize,
-                            t == 0.0f ? juce::Justification::left : (t >= kMaxMs ? juce::Justification::right : juce::Justification::horizontallyCentred));
+        if (k % 2 == 0)
+            drawAtBaseline (g, k == 0 ? juce::String ("0") : juce::String (juce::roundToInt (t)) + " ms", xOf (t), all.getBottom() - 4.0f, info, kAxisSize,
+                            k == 0 ? juce::Justification::left : (k == divisions ? juce::Justification::right : juce::Justification::horizontallyCentred));
     }
     for (float f : { 0.5f, 1.0f })
     {
@@ -76,7 +82,7 @@ void DelayGraph::paint (juce::Graphics& g)
     const int cols = (int) plot.getWidth();
     for (int x = 0; x < cols; ++x)
     {
-        const float ms = kMaxMs * (float) x / (float) cols;
+        const float ms = windowMs * (float) x / (float) cols;
         const float a = juce::jmin (1.0f, std::sqrt (ringAt (proc.ringL, ms))), b = juce::jmin (1.0f, std::sqrt (ringAt (proc.ringR, ms)));
         g.setColour (accent.withAlpha (0.28f));
         if (a > 0.01f) g.fillRect (plot.getX() + (float) x, mid - a * half, 1.0f, a * half);
@@ -94,7 +100,7 @@ void DelayGraph::paint (juce::Graphics& g)
     const bool pp = v (BDelayIDs::pingpong) > 0.5f;
     auto drawTap = [&] (float ms, float amp, bool left)
     {
-        if (ms > kMaxMs || amp < 0.01f) return;
+        if (ms > windowMs || amp < 0.01f) return;
         const float x = xOf (ms), h = juce::jmin (1.0f, amp) * half;
         const float lit = juce::jmin (1.0f, 3.0f * ringAt (left ? proc.ringL : proc.ringR, ms));   // si accende quando l'eco suona
         g.setColour (accent.withAlpha (0.55f + 0.45f * lit));
@@ -122,13 +128,13 @@ void DelayGraph::paint (juce::Graphics& g)
             t += left ? tL : tR;
             drawTap (t, amp, left);
             amp *= fb;
-            if (t > kMaxMs) break;
+            if (t > windowMs) break;
         }
     }
     else
     {
         float amp = 1.0f;
-        for (int k = 1; k < 64; ++k, amp *= fb) { drawTap (tL * (float) k, amp, true); drawTap (tR * (float) k, amp, false); if (tL * (float) k > kMaxMs && tR * (float) k > kMaxMs) break; }
+        for (int k = 1; k < 64; ++k, amp *= fb) { drawTap (tL * (float) k, amp, true); drawTap (tR * (float) k, amp, false); if (tL * (float) k > windowMs && tR * (float) k > windowMs) break; }
     }
     const float tagH = capHeight (kTagSize, Face::SansSemiBold);
     juce::String info2 = num (tL, tL < 100.0f ? 1 : 0) + " ms";
@@ -137,35 +143,43 @@ void DelayGraph::paint (juce::Graphics& g)
     drawTag (g, "in", plot.getX() + 10.0f, plot.getY() + 8.0f + tagH);
     drawAtBaseline (g, "ECHO", plot.getX() + 32.0f, plot.getY() + 8.0f + tagH, accent, kTagSize, juce::Justification::left, Face::SansSemiBold, 0.08f);
     drawValueTag (g, info2, plot.getRight() - 8.0f, plot.getY() + 8.0f + tagH, juce::Justification::right);
+    // tape e bbd: fin dove arrivano gli acuti delle ripetizioni (più il ritardo è lungo, più sono scure)
+    const int type = juce::jlimit (0, 4, (int) v (BDelayIDs::type));
+    if (const float hz = BDelayProcessor::characterHz (type, tL); hz > 0.0f)
+        drawValueTag (g, (type == BDelayProcessor::Tape ? "tape to " : "bbd to ") + freqText (hz), plot.getRight() - 8.0f,
+                      plot.getY() + 14.0f + 2.0f * tagH, juce::Justification::right);
 }
 
 BDelayEditor::BDelayEditor (BDelayProcessor& p)
     : ShellEditor (p, p.apvts, "delay", 1100, 470), timeSlot (p), graph (p)
 {
     using namespace ui;
+    addHeaderCheck ("trails", BDelayIDs::trails);
+    addHeaderCheck ("ping-pong", BDelayIDs::pingpong);
     setHeaderChoice ("type", BDelayIDs::type, { "digital", "tape", "bbd", "lofi", "reverse" });
     auto pct = [] (float v) { return juce::String (juce::roundToInt (v)) + " %"; };
     auto stepPct = [] (float v, int d) { return std::round (v) + 5.0f * (float) d; };
     auto oct6 = [] (float v, int d) { return v * std::pow (2.0f, (float) d / 6.0f); };
+    // il ritmo: quando arriva l'eco e quante volte torna; poi quanto se ne sente
     addComponent ("time", timeSlot, timeSlot.idealWidth());
     addCheck ("sync", BDelayIDs::sync);
     tapBtn.onTap = [&p] { p.tap(); };
     tapBtn.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     addComponent ({}, tapBtn, 46);
     addValue ("feedback", BDelayIDs::feedback, pct, stepPct, { "110 %" });
+    addValue ("mix", BDelayIDs::mix, pct, stepPct, { "100 %" });
+    // il colore delle ripetizioni: filtri, poi movimento e diffusione
+    beginColumn (1);
     addValue ("locut", BDelayIDs::locut, [] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; }, oct6, { "800 Hz", "888 Hz" });
     addValue ("hicut", BDelayIDs::hicut, [] (float v) { return freqText (v); }, oct6, { "20.0 kHz", "8.88 kHz" });
-    addValue ("mix", BDelayIDs::mix, pct, stepPct, { "100 %" });
-    beginColumn (1);
-    addValue ("offset", BDelayIDs::offset, [] (float v) { const int i = juce::roundToInt (v); return (i > 0 ? "+" : "") + juce::String (i) + " %"; }, stepPct, { "-50 %", "+50 %" });
-    addCheck ("ping-pong", BDelayIDs::pingpong);
     addValue ("mod", BDelayIDs::mod, pct, stepPct, { "100 %" });
-    beginColumn (2);
     addValue ("smear", BDelayIDs::smear, pct, stepPct, { "100 %" });
+    // immagine, dinamica e livello d'uscita
+    beginColumn (2);
+    addValue ("offset", BDelayIDs::offset, [] (float v) { const int i = juce::roundToInt (v); return (i > 0 ? "+" : "") + juce::String (i) + " %"; }, stepPct, { "-50 %", "+50 %" });
     addValue ("duck", BDelayIDs::duck, pct, stepPct, { "100 %" });
     addValue ("output", BDelayIDs::output, [] (float v) { return (v > 0.04f ? "+" : "") + num (v, 1) + " dB"; },
               [] (float v, int d) { return std::round (v * 2.0f + (float) d) / 2.0f; }, { "+12.0 dB", "-24.0 dB" });
-    addCheck ("trails", BDelayIDs::trails);
     endColumn();
     setDisplay (graph);
     displayRefreshesItself = true;

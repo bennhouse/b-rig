@@ -97,7 +97,8 @@ void BDelayProcessor::prepareToPlay (double sampleRate, int)
     for (int c = 0; c < 2; ++c)
     {
         for (auto* f : { &lo[(size_t) c], &hi[(size_t) c], &bbd1[(size_t) c], &bbd2[(size_t) c], &lofiHp[(size_t) c], &lofiLp[(size_t) c] }) f->reset();
-        bbd1[(size_t) c].set (fs, 2800.0, 0.7071); bbd2[(size_t) c].set (fs, 2800.0, 0.5412);
+        bbdHz[(size_t) c] = tapeHz[(size_t) c] = 0.0f;
+        tapeF[(size_t) c].reset();
         lofiHp[(size_t) c].set (fs, 300.0); lofiLp[(size_t) c].set (fs, 3000.0);
         for (size_t k = 0; k < 4; ++k)
         {
@@ -106,13 +107,23 @@ void BDelayProcessor::prepareToPlay (double sampleRate, int)
             a.b.assign ((size_t) a.len, 0.0f); a.pos = 0;
         }
     }
-    tapeLp = { 0, 0 }; holdV = { 0, 0 }; holdN = 0; fbSig = { 0, 0 };
+    holdV = { 0, 0 }; holdN = 0; fbSig = { 0, 0 };
+    hold = juce::jmax (1, (int) std::round (fs / 12000.0));   // lofi: un campione tenuto ogni ~83 µs (12 kHz)
+    updateCharacter();
     auto osc = [this] (float hz, float& s, float& c, float& k) { k = 2.0f * std::sin (juce::MathConstants<float>::pi * hz / (float) fs); s = 0.0f; c = 1.0f; };
     osc (0.8f, modS, modC, modK); osc (0.5f, wowS, wowC, wowK); osc (6.0f, flS, flC, flK);
     fbSm = prm (P_FB) / 100.0f; mixSm = prm (P_MIX) / 100.0f; outSm = sp::dbToGain (prm (P_OUT)); sendSm = 1.0f;
     duckEnv = 0; duckAtk = sp::coefMs (10.0, fs); duckRel = sp::coefMs (250.0, fs);
     lastHi = lastLo = -1; lastType = -1;
     rIn = rL = rR = 0; rN = 0;
+}
+
+float BDelayProcessor::characterHz (int type, float delayMs) noexcept
+{
+    const float ms = juce::jmax (1.0f, delayMs);
+    if (type == Tape) return juce::jlimit (3500.0f, 14000.0f, 14000.0f * std::pow (120.0f / ms, 0.6f));
+    if (type == Bbd)  return juce::jlimit (900.0f, 10000.0f, 0.4f * 4096.0f / (2.0f * ms * 0.001f));   // 0,4 x clock (N / 2T)
+    return 0.0f;
 }
 
 float BDelayProcessor::readHermite (const std::vector<float>& b, float delay) const noexcept
@@ -131,22 +142,40 @@ float BDelayProcessor::character (int c, float x) noexcept
     switch (lastType)
     {
         case Tape:
-        {
             x = sp::fastTanh (1.4f * x) / 1.4f;                 // il nastro comprime i picchi
-            const float a = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 9000.0f / (float) fs);
-            tapeLp[(size_t) c] += a * (x - tapeLp[(size_t) c]);
-            return tapeLp[(size_t) c];
-        }
+            return tapeF[(size_t) c].processLP (x);
         case Bbd:
             x = bbd2[(size_t) c].processLP (bbd1[(size_t) c].processLP (x));
             return sp::fastTanh (1.2f * x) / 1.2f;
         case Lofi:
         {
-            const int hold = juce::jmax (1, (int) std::round (fs / 12000.0));
             if (holdN % hold == 0) holdV[(size_t) c] = std::round (x * 127.0f) / 127.0f;   // 8 bit, ~12 kHz
             return lofiLp[(size_t) c].processLP (lofiHp[(size_t) c].processHP (holdV[(size_t) c]));
         }
         default: return x;
+    }
+}
+
+// filtri del carattere dal ritardo attuale (una volta per blocco: il tempo scivola in ~80 ms, i filtri lo seguono)
+void BDelayProcessor::updateCharacter() noexcept
+{
+    for (int c = 0; c < 2; ++c)
+    {
+        const float ms = dSm[(size_t) c] * 1000.0f / (float) fs;
+        if (lastType == Tape || lastType < 0)
+        {
+            const float hz = juce::jmin (characterHz (Tape, ms), (float) (0.45 * fs));
+            if (std::abs (hz - tapeHz[(size_t) c]) > 0.002f * hz) { tapeF[(size_t) c].set (fs, hz, 0.6); tapeHz[(size_t) c] = hz; }
+        }
+        if (lastType == Bbd || lastType < 0)
+        {
+            const float hz = juce::jmin (characterHz (Bbd, ms), (float) (0.45 * fs));
+            if (std::abs (hz - bbdHz[(size_t) c]) > 0.002f * hz)   // Butterworth del 4° ordine (due sezioni)
+            {
+                bbd1[(size_t) c].set (fs, hz, 0.5412); bbd2[(size_t) c].set (fs, hz, 1.3066);
+                bbdHz[(size_t) c] = hz;
+            }
+        }
     }
 }
 
@@ -172,6 +201,7 @@ void BDelayProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const float lc = prm (P_LOCUT), hc = juce::jmin (prm (P_HICUT), (float) (0.45 * fs));
     if (std::abs (lc - lastLo) > 0.5f) { for (auto& f : lo) f.set (fs, lc); lastLo = lc; }
     if (std::abs (hc - lastHi) > 1.0f) { for (auto& f : hi) f.set (fs, hc); lastHi = hc; }
+    updateCharacter();
     const bool pp = prm (P_PP) > 0.5f;
     const float fbT = prm (P_FB) / 100.0f, mixT = prm (P_MIX) / 100.0f, outT = sp::dbToGain (prm (P_OUT));
     const float modD = prm (P_MOD) / 100.0f * 0.003f * (float) fs;   // fino a ±3 ms
@@ -252,7 +282,7 @@ void BDelayProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     wetPeak.store (juce::jmax (peak, 0.85f * wetPeak.load (std::memory_order_relaxed)), std::memory_order_relaxed);
     for (int c = 0; c < 2; ++c)
-        for (auto* f : { &lo[(size_t) c], &hi[(size_t) c], &bbd1[(size_t) c], &bbd2[(size_t) c], &lofiHp[(size_t) c], &lofiLp[(size_t) c] }) f->flush();
+        for (auto* f : { &lo[(size_t) c], &hi[(size_t) c], &bbd1[(size_t) c], &bbd2[(size_t) c], &lofiHp[(size_t) c], &lofiLp[(size_t) c], &tapeF[(size_t) c] }) f->flush();
 }
 
 void BDelayProcessor::getStateInformation (juce::MemoryBlock& d)

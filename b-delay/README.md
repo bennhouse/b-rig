@@ -9,8 +9,8 @@ A delay for any source with its character inside the feedback loop, so each repe
 - One circular buffer per channel (allocated before playback), read with 4-point Hermite interpolation. The delay time glides in about 80 ms, so changing it bends the pitch of the repeats like tape, without clicks.
 - **Types**, all inside the loop:
   - `digital`: clean repeats.
-  - `tape`: soft saturation (peaks compressed), a 9 kHz low-pass, wow (0.5 Hz) and flutter (6 Hz).
-  - `bbd`: bucket brigade, a 2.8 kHz second-order low-pass and a light saturation: warm and dark.
+  - `tape`: soft saturation (peaks compressed), wow (0.5 Hz) and flutter (6 Hz), and a second-order low-pass that follows the tape speed: a tape echo makes a longer delay by running the tape slower, which loses highs at the head. 14 kHz up to 120 ms, 6.6 kHz at 400 ms, 4.5 kHz at 800 ms.
+  - `bbd`: a bucket brigade chip with 4096 cells. A longer delay means a slower clock, so the band gets narrower: a fourth-order low-pass at 0.4 × the clock, from 10 kHz on short slapbacks to 2.7 kHz at 300 ms and 900 Hz at 1 s, plus a light saturation.
   - `lofi`: samples held at about 12 kHz and 8 bits, then a 300 Hz-3 kHz band.
   - `reverse`: two heads read grains as long as the delay time backwards, crossfaded with a cosine window.
 - `locut` and `hicut` are in the loop too; `smear` passes the repeats through 4 all-passes, so the attacks soften a bit more on each pass and the delay turns into a pad; `mod` is a slow chorus/vibrato on the repeats (up to ±3 ms, left and right in quadrature).
@@ -19,10 +19,13 @@ A delay for any source with its character inside the feedback loop, so each repe
 
 ## Controls
 
-- `type` (digital, tape, bbd, lofi, reverse), top right.
-- Top row in the frame: `time` (1-2000 ms; with `sync` a note value instead: 1/1 to 1/16, dotted D and triplet T, on the song tempo), `sync`, `tap` (the average of the last clicks; it switches sync off), `feedback` (0-110 %), `locut` (20-800 Hz), `hicut` (0.8-20 kHz), `mix`.
-- Left of the graph: `offset` (the right channel's time ±50 % against the left), `ping-pong`, `mod`. Right: `smear`, `duck`, `output`, `trails`.
-- The graph (0-2000 ms, left above the centre line, right below): the predicted repeats (position from time, offset and ping-pong, height from feedback, wider bells with smear), the sound travelling along the delay line in indigo, the input at 0 ms in grey, and the repeats lighting up when they sound.
+The controls are grouped by what they do, most important first:
+
+- **Top right**, the modes: `trails`, `ping-pong` and `type` (digital, tape, bbd, lofi, reverse).
+- **Top row**, the rhythm and how much of it you hear: `time` (1-2000 ms; with `sync` a note value instead: 1/1 to 1/16, dotted D and triplet T, on the song tempo), `sync`, `tap` (the average of the last clicks; it switches sync off), `feedback` (0-110 %), `mix`.
+- **Left of the graph**, the colour of the repeats: `locut` (20-800 Hz), `hicut` (0.8-20 kHz), `mod`, `smear`.
+- **Right of the graph**, image and level: `offset` (the right channel's time ±50 % against the left), `duck`, `output`.
+- **The graph** (left above the centre line, right below): the predicted repeats (position from time, offset and ping-pong, height from feedback, wider bells with smear), the sound travelling along the delay line, the input at 0 ms in grey, and the repeats lighting up when they sound. The time window adapts to the delay (250 ms, 500 ms, 1 s or 2 s, the shortest that shows at least four repeats), so a slapback is as readable as a long echo. With `tape` or `bbd` a tag says how far the highs of the repeats reach at the current time.
 
 ## Measured (see `Tests/Tests.cpp`)
 
@@ -30,6 +33,7 @@ A delay for any source with its character inside the feedback loop, so each repe
 - `offset` +20 %: the right repeat at 300 ms. `ping-pong`: the first repeat on the left only, the second on the right.
 - `sync`: dotted 1/8 at 120 bpm = 375 ms. `tap` at 500 ms intervals: 504 ms.
 - Every type at feedback 110 %: it self-oscillates with peaks under 1.1.
+- Longer delays sound darker, as on the real machines (energy at 4 kHz against 500 Hz in the first repeat of a noise burst): `bbd` +7.6 dB at 100 ms, −14.9 dB at 800 ms; `tape` +7.7 dB at 100 ms, +4.0 dB at 800 ms.
 - Changing the time while playing: the repeats bend in pitch with no discontinuity (second difference at most 0.27 of the first).
 - Bypass with `trails`: the tail keeps going (−22 dB); without: silence.
 - `mix` 0: the output is identical to the input.

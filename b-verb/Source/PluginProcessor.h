@@ -4,10 +4,13 @@
 //   2. early          - 10 tap per canale con uno schema diverso a sinistra e a destra, scalati da "size"
 //   3. diffusione     - 4 passa-tutto di Schroeder in serie (densità diversa per tipo); spring: 24 passa-tutto del
 //                       1° ordine in cascata (dispersione: il "chirp" delle molle)
+//   2b. le prime riflessioni passano da un passa-basso per tipo (assorbimento di muri e aria: una stanza è più
+//                       scura di una piastra)
 //   4. coda           - FDN a 8 linee con matrice di Hadamard (trasformata veloce: solo somme e differenze), tempo
-//                       di riverbero RT60 da "decay", filtro assorbente "damp" nel loop (sopra quella frequenza la coda
-//                       dura metà), modulazione lenta delle linee
-//                       ("mod") contro le risonanze metalliche
+//                       di riverbero RT60 da "decay", filtro assorbente nel loop: uno shelf del 1° ordine per linea con
+//                       guadagno esatto per l'RT60 sotto "damp" e il quadrato sopra (lì la coda dura esattamente metà),
+//                       modulazione lenta delle linee ("mod") contro le risonanze metalliche, lette con interpolazione
+//                       Hermite (gli acuti non si spengono a ogni giro come con l'interpolazione lineare)
 //   5. shimmer        - nel loop un pitch shifter a +1 ottava (due testine, grani di 60 ms) rientra al 25 %
 //   6. freeze         - feedback 1, niente damping né ingresso: la coda resta sospesa
 //   7. uscita         - locut e hicut sul wet, larghezza stereo, duck (il wet si abbassa mentre il dry è forte),
@@ -71,6 +74,15 @@ public:
     static float tapTimeMs (int type, float size01, int k, bool right) noexcept
     { return (right ? kTapMsR[k] : kTapMsL[k]) * (0.3f + 0.7f * size01) * kTypeScale[type]; }
     static float tapGain (int k) noexcept { return std::pow (0.85f, (float) k); }
+    static constexpr float kTypeErHz[5] = { 6500.0f, 12000.0f, 4500.0f, 5000.0f, 4500.0f };   // passa-basso delle prime riflessioni
+    static constexpr float kLineMs[8] = { 37.3f, 42.7f, 49.1f, 53.9f, 61.7f, 67.1f, 73.4f, 79.3f };   // linee a size 100 %
+    static float lineScale (int type, float size01) noexcept { return (0.25f + 0.75f * size01) * kTypeScale[type]; }
+    // Coefficienti dello shelf assorbente di una linea lunga lenSamples: guadagno a DC per l'RT60 "decay", sopra
+    // "damp" il quadrato (RT60 / 2). b0, b1, a1 di y = b0 x + b1 x[-1] - a1 y[-1].
+    struct Shelf { float b0 = 1, b1 = 0, a1 = 0; };
+    static Shelf absorbent (double lenSamples, double decay, double dampHz, double fs, bool frozen) noexcept;
+    // RT60 della coda a una frequenza (s), dalla stessa formula del loop: per il grafico e i test
+    static double rt60At (double hz, int type, float size01, double decay, double dampHz, double fs);
 
     // per il grafico: livelli d'ingresso e del wet, uno ogni 256 campioni
     struct Frame { float in = 0, wet = 0; };
@@ -90,8 +102,9 @@ private:
     int inPos = 0;
     std::array<std::vector<float>, kLines> lines;
     int linePos = 0;
-    std::array<float, kLines> len {}, lenT {}, g {}, gT {}, lp {};
-    float dampC = 0.5f, preSm = 0, preT = 0;
+    std::array<float, kLines> len {}, lenT {}, b0 {}, b0T {}, b1 {}, b1T {}, zx {}, zy {};
+    float a1 = 0, a1T = 0, preSm = 0, preT = 0, erC = 0.5f;
+    std::array<float, 2> erLp {};
     std::array<std::array<float, kTaps>, 2> tapD {}, tapDT {};
     float earlyG = 0, earlyGT = 0;
     // diffusione

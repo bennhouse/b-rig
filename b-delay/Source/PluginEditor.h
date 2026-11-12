@@ -1,11 +1,13 @@
 #pragma once
-// Interfaccia b-delay (accento indaco):
-//   b-delay                                         type [digital|tape|bbd|lofi|reverse]
+// Interfaccia b-delay (accento indaco). Gerarchia: in alto il ritmo (tempo, ripetizioni) e quanto se ne sente,
+// a sinistra il colore delle ripetizioni, a destra stereo e uscita; i modi (trails, ping-pong, tipo) nell'intestazione.
+//   b-delay                         trails [■]  ping-pong [ ]  type [digital|tape|bbd|lofi|reverse]
 //   ┌──────────────────────────────────────────────────────────────────────────────────┐
-//     time < 380 ms >  sync [■]  [tap]  feedback < 45 % >  locut < 120 Hz >  hicut < 6.00 kHz >  mix < 30 % >
-//     offset < 0 % >    ┌ timeline 0-2000 ms: sopra L, sotto R; i tap previsti ┐   smear < 0 % >
-//     ping-pong [■]     │ (posizione da time / offset / ping-pong, altezza dal │   duck < 0 % >
-//     mod < 20 % >      └ feedback, larghezza dallo smear) e il suono che scorre┘  output < 0.0 dB >  trails [■]
+//     time < 380 ms >  sync [■]  [tap]  feedback < 45 % >  mix < 30 % >                          stereo
+//     locut < 120 Hz >   ┌ timeline: sopra L, sotto R; i tap previsti (posizione  ┐  offset < 0 % >
+//     hicut < 6.00 kHz > │ da time / offset / ping-pong, altezza dal feedback,     │  duck < 0 % >
+//     mod < 20 % >       │ larghezza dallo smear) e il suono che scorre; la finestra│  output < 0.0 dB >
+//     smear < 0 % >      └ si adatta al tempo (250 ms ... 2 s)                     ┘
 //   └──────────────────────────────────────────────────────────────────────────────────┘
 // Con sync acceso il riquadro del tempo mostra la figura (1/8D, 1/4T...) invece dei millisecondi.
 #include "PluginProcessor.h"

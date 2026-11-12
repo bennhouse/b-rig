@@ -102,6 +102,28 @@ int main()
         std::printf ("       bypass con trails %s: coda %.1f dB\n", trails ? "on" : "off", tail);
         check (trails ? tail > -50.0 : tail < -90.0, trails ? "trails: in bypass la coda sfuma da sola" : "trails spento: in bypass la coda si ferma", tail);
     }
+    // 7b. realismo: in un bbd e su un nastro le ripetizioni lunghe sono più scure delle corte
+    for (int type : { (int) BDelayProcessor::Bbd, (int) BDelayProcessor::Tape })
+    {
+        auto tilt = [&] (float ms)
+        {
+            auto p = mk ({ { BDelayIDs::type, (float) type }, { BDelayIDs::time, ms }, { BDelayIDs::feedback, 0.0f } });
+            juce::Random rnd (7);
+            const int at = (int) (ms * 0.001f * sr);
+            auto y = run (*p, at + 9600, [&] (int i) { return i < 4800 ? 0.2f * (rnd.nextFloat() - 0.5f) : 0.0f; });
+            auto band = [&] (double hz)   // energia in banda (un tono singolo su un rumore oscilla troppo)
+            {
+                sp::Bq bp; bp.set (sp::Bq::BP, sr, hz, 1.4);
+                double e = 0;
+                for (int i = 0; i < at + 4800; ++i) { const double v = bp.process (y.getSample (0, i)); if (i >= at) e += v * v; }
+                return 10.0 * std::log10 (e + 1e-30);
+            };
+            return band (4000.0) - band (500.0);
+        };
+        const double shortT = tilt (100.0f), longT = tilt (800.0f);
+        std::printf ("       %s: 4 kHz rispetto a 500 Hz, eco a 100 ms %.1f dB, a 800 ms %.1f dB\n", type == BDelayProcessor::Bbd ? "bbd" : "tape", shortT, longT);
+        check (shortT - longT > (type == BDelayProcessor::Bbd ? 15.0 : 3.0), "ritardo lungo = ripetizioni più scure (clock / velocità del nastro)", shortT - longT);
+    }
     // 8. mix 0: il dry passa identico
     {
         auto p = mk ({ { BDelayIDs::mix, 0.0f } });
@@ -121,6 +143,11 @@ int main()
         auto p = mk ({ { BDelayIDs::mix, 30.0f }, { BDelayIDs::offset, 25.0f } });
         run (*p, 30000, [] (int i) { return i < 4800 ? pluck (i, 220.0) : 0.0f; });
         snapshot (*p, "b-delay.png");
+        // slapback corto in bbd con ping-pong: la finestra si stringe (250 ms) e il grafico dice fin dove arrivano gli acuti
+        auto q = mk ({ { BDelayIDs::mix, 30.0f }, { BDelayIDs::type, 2.0f }, { BDelayIDs::time, 60.0f }, { BDelayIDs::pingpong, 1.0f },
+                       { BDelayIDs::feedback, 55.0f } });
+        run (*q, 12000, [] (int i) { return i < 2400 ? pluck (i, 220.0) : 0.0f; });
+        snapshot (*q, "b-delay_slap.png");
     }
     return finish();
 }

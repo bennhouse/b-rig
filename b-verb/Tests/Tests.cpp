@@ -13,10 +13,10 @@ std::unique_ptr<BVerbProcessor> mk (std::initializer_list<std::pair<const char*,
     p->prepareToPlay (sr, block);
     return p;
 }
-// RT60 dalla pendenza (integrale di Schroeder, da -5 a -25 dB) nella banda attorno a 700 Hz
-double rt60 (const juce::AudioBuffer<float>& y)
+// RT60 dalla pendenza (integrale di Schroeder, da -5 a -25 dB) nella banda attorno a hz
+double rt60 (const juce::AudioBuffer<float>& y, double hz = 500.0)
 {
-    sp::Bq bp; bp.set (sp::Bq::BP, sr, 700.0, 1.0);
+    sp::Bq bp; bp.set (sp::Bq::BP, sr, hz, 2.0);
     std::vector<double> e ((size_t) y.getNumSamples());
     for (int i = 0; i < y.getNumSamples(); ++i) { const double v = bp.process (y.getSample (0, i)); e[(size_t) i] = v * v; }
     for (int i = (int) e.size() - 2; i >= 0; --i) e[(size_t) i] += e[(size_t) i + 1];
@@ -43,7 +43,16 @@ int main()
         auto y = run (*p, (int) (sr * (d * 1.6 + 0.5)), impulse);
         const double t = rt60 (y);
         std::printf ("       decay %.1f s: RT60 misurato %.2f s\n", d, t);
-        check (std::abs (t - d) < 0.2 * d, "RT60 entro il 20 % di decay", t / d);
+        check (std::abs (t - d) < 0.05 * d, "RT60 entro il 5 % di decay", t / d);
+    }
+    // 1b. le alte durano quanto dice il grafico (stessa formula del loop), più corte del corpo
+    {
+        auto p = mk ({ { BVerbIDs::decay, 3.0f }, { BVerbIDs::mod, 0.0f }, { BVerbIDs::early, 0.0f }, { BVerbIDs::predelay, 0.0f },
+                       { BVerbIDs::damp, 3000.0f }, { BVerbIDs::hicut, 20000.0f } });
+        auto y = run (*p, (int) (sr * 5), impulse);
+        const double hi = rt60 (y, 6000.0), want = BVerbProcessor::rt60At (6000.0, 2, 0.65f, 3.0, 3000.0, sr);
+        std::printf ("       damp 3 kHz: RT60 a 6 kHz misurato %.2f s, previsto %.2f s (corpo 3.00 s)\n", hi, want);
+        check (std::abs (hi - want) < 0.12 * want && hi < 2.2, "damp: le alte decadono come previsto, prima del corpo", hi / want);
     }
     // 2. predelay: niente wet prima del predelay
     {

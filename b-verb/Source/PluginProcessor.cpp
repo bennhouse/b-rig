@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <complex>
 
 namespace
 {
@@ -7,8 +8,6 @@ namespace
     constexpr const char* kIds[14] = { BVerbIDs::type, BVerbIDs::decay, BVerbIDs::predelay, BVerbIDs::size, BVerbIDs::locut, BVerbIDs::hicut,
                                        BVerbIDs::mix, BVerbIDs::early, BVerbIDs::damp, BVerbIDs::mod, BVerbIDs::duck, BVerbIDs::stereo,
                                        BVerbIDs::freeze, BVerbIDs::output };
-    // linee della coda (ms a size 100 %): lunghezze prime tra loro, dal più corto al più lungo
-    constexpr float kLineMs[8] = { 37.3f, 42.7f, 49.1f, 53.9f, 61.7f, 67.1f, 73.4f, 79.3f };
     constexpr float kDiffMs[4] = { 4.7f, 3.6f, 12.7f, 9.3f };
     constexpr float kTypeDiff[5] = { 0.5f, 0.75f, 0.6f, 0.0f, 0.6f };   // densità della diffusione per tipo
     constexpr float kInSign[8] = { 1, -1, 1, -1, -1, 1, -1, 1 };
@@ -25,6 +24,34 @@ namespace
         for (int i = 0; i < 8; ++i) x[i] *= 0.35355339f;
     }
     inline float hannW (float p) noexcept { const float s = std::sin (juce::MathConstants<float>::pi * p); return s * s; }
+    // lettura Hermite a 4 punti da un buffer circolare (dimensione potenza di 2)
+    inline float hermite (const std::vector<float>& b, int mask, float pos) noexcept
+    {
+        const int i = (int) pos; const float f = pos - (float) i;
+        const float y0 = b[(size_t) ((i - 1) & mask)], y1 = b[(size_t) (i & mask)], y2 = b[(size_t) ((i + 1) & mask)], y3 = b[(size_t) ((i + 2) & mask)];
+        const float c1 = 0.5f * (y2 - y0), c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3, c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+        return ((c3 * f + c2) * f + c1) * f + y1;
+    }
+}
+
+// Shelf del 1° ordine (bilineare): a DC il guadagno per passaggio che dà l'RT60 "decay", a Nyquist il suo quadrato,
+// transizione a "damp". Con freeze entrambi 1: il filtro diventa un filo.
+BVerbProcessor::Shelf BVerbProcessor::absorbent (double lenSamples, double decay, double dampHz, double fs, bool frozen) noexcept
+{
+    const double gdc = frozen ? 1.0 : std::pow (10.0, -3.0 * lenSamples / (decay * fs)), ghf = gdc * gdc;
+    const double k = std::tan (juce::MathConstants<double>::pi * juce::jlimit (20.0, 0.45 * fs, dampHz) / fs);
+    return { (float) ((ghf + gdc * k) / (1.0 + k)), (float) ((gdc * k - ghf) / (1.0 + k)), (float) ((k - 1.0) / (1.0 + k)) };
+}
+
+double BVerbProcessor::rt60At (double hz, int type, float size01, double decay, double dampHz, double fs)
+{
+    // linea media: guadagno per passaggio alla frequenza, poi quanti passaggi servono per -60 dB
+    double sumMs = 0; for (float ms : kLineMs) sumMs += ms;
+    const double len = sumMs / 8.0 * 0.001 * fs * lineScale (juce::jlimit (0, 4, type), size01);
+    const auto c = absorbent (len, decay, dampHz, fs, false);
+    const auto z = std::polar (1.0, -juce::MathConstants<double>::twoPi * hz / fs);
+    const double gain = std::abs (((double) c.b0 + (double) c.b1 * z) / (1.0 + (double) c.a1 * z));
+    return gain >= 1.0 ? 1.0e3 : 3.0 * len / (-std::log10 (gain) * fs);
 }
 
 BVerbProcessor::BVerbProcessor()
@@ -73,7 +100,7 @@ void BVerbProcessor::prepareToPlay (double sampleRate, int)
     for (auto& b : inBuf) std::fill (b.begin(), b.end(), 0.0f);
     for (auto& l : lines) std::fill (l.begin(), l.end(), 0.0f);
     inPos = linePos = 0;
-    lp.fill (0.0f);
+    zx.fill (0.0f); zy.fill (0.0f); erLp = { 0.0f, 0.0f };
     for (size_t k = 0; k < 4; ++k)
     {
         auto& a = diff[k];
@@ -98,7 +125,7 @@ void BVerbProcessor::prepareToPlay (double sampleRate, int)
     mixSm = prm (P_MIX) / 100.0f; outSm = sp::dbToGain (prm (P_OUT)); widthSm = prm (P_STEREO) / 100.0f;
     type = -1; ctl = 0;
     control();
-    len = lenT; g = gT; tapD = tapDT; earlyG = earlyGT; preSm = preT;
+    len = lenT; b0 = b0T; b1 = b1T; a1 = a1T; tapD = tapDT; earlyG = earlyGT; preSm = preT;
     acc = {}; accN = 0;
 }
 
@@ -112,16 +139,17 @@ void BVerbProcessor::control() noexcept
         for (size_t k = 0; k < 4; ++k) diff[k].g = kTypeDiff[t];
     }
     const float size = prm (P_SIZE) / 100.0f;
-    const float scale = (0.25f + 0.75f * size) * kTypeScale[t];
+    const float scale = lineScale (t, size);
     const float decay = prm (P_DECAY);
     frozen = prm (P_FREEZE) > 0.5f;
     for (size_t i = 0; i < kLines; ++i)
     {
         lenT[i] = juce::jlimit (16.0f, (float) (kLine - 64), kLineMs[i] * 0.001f * (float) fs * scale);
-        // feedback per linea: -60 dB in "decay" secondi (con freeze esattamente 1)
-        gT[i] = frozen ? 1.0f : std::pow (10.0f, -3.0f * lenT[i] / (decay * (float) fs));
+        // assorbimento per linea: -60 dB in "decay" secondi sotto damp, in metà tempo sopra (freeze: nessuna perdita)
+        const auto c = absorbent (lenT[i], decay, prm (P_DAMP), fs, frozen);
+        b0T[i] = c.b0; b1T[i] = c.b1; a1T = c.a1;
     }
-    dampC = frozen ? 1.0f : 1.0f - std::exp (-juce::MathConstants<float>::twoPi * prm (P_DAMP) / (float) fs);
+    erC = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * kTypeErHz[t] / (float) fs);
     preT = prm (P_PRE) * 0.001f * (float) fs;
     for (int k = 0; k < kTaps; ++k)
         for (int c = 0; c < 2; ++c) tapDT[(size_t) c][(size_t) k] = preT + tapTimeMs (t, size, k, c == 1) * 0.001f * (float) fs;
@@ -169,7 +197,9 @@ void BVerbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
                     d += a * (tapDT[(size_t) c][(size_t) k] - d);
                     er[c] += ((k & 1) ? -1.0f : 1.0f) * tapGain (k) * readIn (c, d);
                 }
-        er[0] *= earlyG; er[1] *= earlyG;
+        // muri e aria assorbono gli acuti delle riflessioni
+        erLp[0] += erC * (er[0] * earlyG - erLp[0]); erLp[1] += erC * (er[1] * earlyG - erLp[1]);
+        er[0] = erLp[0]; er[1] = erLp[1];
 
         // 3. ingresso della coda: dopo il predelay, mono, diffuso
         float x = frozen ? 0.0f : 0.5f * (readIn (0, preSm) + readIn (1, preSm)) + shimmerFb;
@@ -190,21 +220,20 @@ void BVerbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
         // 4. FDN 8x8
         float v[kLines], out[kLines];
+        a1 += a * (a1T - a1);
         for (size_t k = 0; k < kLines; ++k)
         {
             len[k] += a * (lenT[k] - len[k]);
-            g[k] += a * (gT[k] - g[k]);
+            b0[k] += a * (b0T[k] - b0[k]);
+            b1[k] += a * (b1T[k] - b1[k]);
             // oscillatore in quadratura per la modulazione lenta
             oscS[k] += oscK[k] * oscC[k]; oscC[k] -= oscK[k] * oscS[k];
             const float d = len[k] + (modDepth > 0.0f ? modDepth * (1.0f + oscS[k]) : 0.0f);
-            const float pos = (float) linePos - d + (float) kLine;
-            const int i0 = (int) pos; const float f = pos - (float) i0;
-            const auto& ln = lines[k];
-            const float s0 = ln[(size_t) (i0 & (kLine - 1))], s1 = ln[(size_t) ((i0 + 1) & (kLine - 1))];
-            out[k] = s0 + f * (s1 - s0);
-            // damping assorbente: sotto "damp" il feedback è g, sopra è g * g (le alte decadono in metà tempo)
-            lp[k] += dampC * (out[k] - lp[k]);
-            v[k] = g[k] * (lp[k] + (frozen ? 1.0f : g[k]) * (out[k] - lp[k]));
+            out[k] = hermite (lines[k], kLine - 1, (float) linePos - d + (float) kLine);
+            // shelf assorbente: RT60 esatto sotto "damp", metà sopra
+            const float y = b0[k] * out[k] + b1[k] * zx[k] - a1 * zy[k];
+            zx[k] = out[k]; zy[k] = y;
+            v[k] = y;
         }
         hadamard8 (v);
         for (size_t k = 0; k < kLines; ++k) lines[k][(size_t) linePos] = v[k] + kInSign[k] * 0.35f * x;
@@ -260,7 +289,8 @@ void BVerbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             acc = {}; accN = 0;
         }
     }
-    for (auto& v : lp) if (std::abs (v) < 1.0e-20f) v = 0.0f;
+    for (auto& v : zy) if (std::abs (v) < 1.0e-20f) v = 0.0f;
+    for (auto& v : erLp) if (std::abs (v) < 1.0e-20f) v = 0.0f;
     for (auto& f : loCut) f.flush();
     for (auto& f : hiCut) f.flush();
     springLp.flush();
