@@ -65,6 +65,9 @@ jobs:
   windows:
     name: Windows ${{ matrix.arch }}
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash   # PowerShell spezzerebbe -DBRIG_VERSION=0.1.0 sul punto
     strategy:
       fail-fast: false
       matrix:
