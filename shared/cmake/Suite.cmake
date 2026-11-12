@@ -13,6 +13,9 @@ endif()
 macro(bsuite_setup)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    if(APPLE)   # in Release il linker toglie il codice che nessuno chiama e i simboli locali: binari più piccoli
+        add_link_options("$<$<CONFIG:Release>:LINKER:-dead_strip,-x>")
+    endif()
     if(MSVC)
         add_compile_options(/utf-8 /bigobj /MP)                # sorgenti UTF-8; file con molti simboli; più file insieme
         add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)    # M_PI nei DSP; niente macro min/max di windows.h
