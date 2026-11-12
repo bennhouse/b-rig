@@ -1,4 +1,4 @@
-# b-suite
+<p align="center"><img src="docs/b-suite-logo.svg" alt="b-suite" width="760"></p>
 
 Audio plugins (VST3 / AU) and a standalone app for recording electric guitar at home: from cleaning up the raw DI to the amp, the cab, the effects and a mix that holds up on a phone speaker.
 
