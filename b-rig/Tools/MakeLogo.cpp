@@ -294,7 +294,7 @@ int main (int argc, char** argv)
     for (const auto& [name, scene] : scenes)
     {
         const auto f = dir.getChildFile (juce::String (name) + ".svg");
-        const bool written = f.replaceWithText (scene.svg());
+        const bool written = f.replaceWithText (scene.svg(), false, false, "\n");
         ok = ok && written;
         std::printf ("%s %s\n", written ? "scritto" : "ERRORE", f.getFullPathName().toRawUTF8());
         if (preview != juce::File())   // anteprima PNG facoltativa, solo per controllarlo a occhio

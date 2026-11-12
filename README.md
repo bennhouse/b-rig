@@ -89,7 +89,7 @@ On macOS the plugins are copied to `~/Library/Audio/Plug-Ins` after the build an
 - **Change a plugin:** edit its `Source/`, rebuild, run its test program. The tests measure the sound (levels, timing, decay, CPU) and save screenshots of the interface to `build/`.
 - **Make a new plugin:** copy a small one (b-tight, b-verb) and rename it. `shared/smp/Shell.h` gives you the title, the frame, the value boxes and the about panel; `shared/smp/Filters.h` the common filters.
 - **Put it in b-rig:** add `b-rig/Source/Modules/Mod_<name>.cpp` like the others and an entry in `Modules.cpp`. b-rig builds every module from the plugin's own sources, so a plugin change reaches the app at the next build.
-- **Contribute back:** issues and pull requests are welcome. Keep one change per pull request and run the tests of what you touched.
+- **Contribute back:** issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) explains how. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 - **On Windows:** [docs/WINDOWS.md](docs/WINDOWS.md) lists the tools to install and how to build, test and make the Windows installers.
 
 ## License

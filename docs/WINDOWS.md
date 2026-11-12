@@ -28,12 +28,6 @@ cd b-suite
 
 `--recursive` also downloads JUCE (the `libs/JUCE` submodule). If you forgot it: `git submodule update --init --recursive`.
 
-The repository has no `.gitignore`, so tell your local Git to ignore the build folders (once, from the repository root):
-
-```powershell
-Add-Content .git\info\exclude "build/`nbuild-*/`ndist/`n.vs/`nout/"
-```
-
 ## 3. Build and test
 
 One plugin, from its folder:

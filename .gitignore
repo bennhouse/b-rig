@@ -1,0 +1,21 @@
+# Build output (every plugin and b-rig build into <folder>/build; tools/release.sh uses build-release)
+build/
+build-*/
+cmake-build-*/
+out/
+dist/
+
+# IDEs and editors
+.vs/
+.vscode/
+.idea/
+*.swp
+*.user
+
+# Operating systems
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code: personal settings stay local (the project skills in .claude/skills are shared)
+.claude/settings.local.json
