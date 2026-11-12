@@ -4,6 +4,7 @@
 get_filename_component(BSUITE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)   # radice del repository
 set(BSUITE_VERSION "0.1.0" CACHE STRING "b-suite version (every plugin has the same version)")
 option(BSUITE_COPY_AFTER_BUILD "Copy the plugins to the system plug-in folders after building" ON)
+option(BSUITE_LTO "Link-time optimisation (slower builds; the Windows CI turns it off)" ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)  # universale
@@ -13,7 +14,7 @@ macro(bsuite_setup)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     if(MSVC)
-        add_compile_options(/utf-8 /bigobj)                    # sorgenti UTF-8; file con molti simboli
+        add_compile_options(/utf-8 /bigobj /MP)                # sorgenti UTF-8; file con molti simboli; più file insieme
         add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)    # M_PI nei DSP; niente macro min/max di windows.h
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")   # runtime statico
     endif()
@@ -26,6 +27,9 @@ macro(bsuite_setup)
             include(FetchContent)
             FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git GIT_TAG 9.0.5 GIT_SHALLOW TRUE)
             FetchContent_MakeAvailable(JUCE)
+        endif()
+        if(NOT BSUITE_LTO)   # senza LTO: i flag del target di JUCE si svuotano per tutti i plugin
+            set_target_properties(juce_recommended_lto_flags PROPERTIES INTERFACE_COMPILE_OPTIONS "" INTERFACE_LINK_LIBRARIES "")
         endif()
     endif()
 endmacro()

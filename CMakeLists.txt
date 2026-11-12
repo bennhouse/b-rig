@@ -19,4 +19,7 @@ foreach(line IN LISTS BSUITE_LINES)
         add_dependencies(bsuite_plugins ${target}_AU)
     endif()
     add_dependencies(bsuite_tests ${target}Tests)
+    if(APPLE)   # i test girano sulla macchina che compila: una sola architettura, metà del tempo
+        set_target_properties(${target}Tests PROPERTIES OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    endif()
 endforeach()

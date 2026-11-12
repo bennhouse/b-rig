@@ -40,10 +40,18 @@ jobs:
       - name: Tools
         run: brew list ninja >/dev/null 2>&1 || brew install ninja
 
+      # cache dei file compilati tra una run e l'altra: si ricompila solo ciò che è cambiato (JUCE quasi mai)
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: b-suite-macos
+          max-size: 2G
+
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           -DBSUITE_COPY_AFTER_BUILD=OFF
           -DBSUITE_VERSION=${{ env.VERSION }}
@@ -101,7 +109,8 @@ jobs:
           echo "VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Configure
-        run: cmake -S . -B build -A ${{ matrix.cmake_arch }} -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_VERSION=${{ env.VERSION }}
+        # senza LTO: con MSVC la generazione di codice al link di 19 plugin richiedeva oltre un'ora
+        run: cmake -S . -B build -A ${{ matrix.cmake_arch }} -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_LTO=OFF -DBSUITE_VERSION=${{ env.VERSION }}
 
       - name: Build
         run: cmake --build build --config Release --parallel --target bsuite_plugins
