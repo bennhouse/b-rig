@@ -102,7 +102,7 @@ target_include_directories(BRigIcon PRIVATE ${BRIG_INCLUDES})
 target_compile_definitions(BRigIcon PRIVATE ${BRIG_DEFS})
 target_link_libraries(BRigIcon PRIVATE BRigAssets juce::juce_gui_basics juce::juce_recommended_config_flags)
 
-# Logo della b-suite per il README (SVG, testo in tracciati): ./build/BSuiteLogo_artefacts/Release/BSuiteLogo ../docs/b-suite-logo.svg
+# Logo della b-suite (banner, schermo intero, icona; SVG, testo in tracciati): ./build/BSuiteLogo_artefacts/Release/BSuiteLogo ../docs
 juce_add_console_app(BSuiteLogo PRODUCT_NAME "BSuiteLogo")
 target_sources(BSuiteLogo PRIVATE Tools/MakeLogo.cpp)
 target_include_directories(BSuiteLogo PRIVATE ${BRIG_INCLUDES})
