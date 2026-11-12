@@ -90,6 +90,7 @@ On macOS the plugins are copied to `~/Library/Audio/Plug-Ins` after the build an
 - **Make a new plugin:** copy a small one (b-tight, b-verb) and rename it. `shared/smp/Shell.h` gives you the title, the frame, the value boxes and the about panel; `shared/smp/Filters.h` the common filters.
 - **Put it in b-rig:** add `b-rig/Source/Modules/Mod_<name>.cpp` like the others and an entry in `Modules.cpp`. b-rig builds every module from the plugin's own sources, so a plugin change reaches the app at the next build.
 - **Contribute back:** issues and pull requests are welcome. Keep one change per pull request and run the tests of what you touched.
+- **On Windows:** [docs/WINDOWS.md](docs/WINDOWS.md) lists the tools to install and how to build, test and make the Windows installers.
 
 ## License
 
@@ -100,7 +101,7 @@ b-suite is free software under the [GNU Affero General Public License v3](LICENS
 - Two products, each with its own tag and installers on the GitHub releases page (pre-releases during the beta):
   - **b-suite** (`b-suite-v0.2.0`): every plugin in one installer, all with the same version. macOS: a universal `.pkg` with Audio Unit and VST3, where "Customise" lets you leave plugins out. Windows x64 and ARM64: a VST3 setup with one component per plugin.
   - **b-rig** (`b-rig-v0.2.0`): the standalone app, for macOS (Apple Silicon) and Windows (x64 and ARM64).
-- To publish, on a Mac: `tools/release.sh b-suite 0.2.0` or `tools/release.sh b-rig 0.2.0`. It sets the version, builds and tests everything locally, makes the macOS installer, then tags, pushes and creates the release with it. The tag starts a GitHub Action that builds the Windows installers (a Mac cannot build for Windows) and adds them to the same release.
+- To publish, on a Mac: `tools/release.sh b-suite 0.2.0` or `tools/release.sh b-rig 0.2.0`. It sets the version, builds and tests everything locally, makes the macOS installer, then tags, pushes and creates the release with it. The Windows installers are added to the same release from a Windows PC with `tools/release-windows.ps1` (see [docs/WINDOWS.md](docs/WINDOWS.md)), or by the GitHub Action of the tag once the repository variable `WINDOWS_CI` is `true`.
 - To build every plugin at once locally: `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` then `cmake --build build --target bsuite_plugins`.
 - b-rig checks for new b-rig releases, the plugins for new b-suite releases, once a day. If there is one, a small notice shows up in the corner; click it and the about panel opens with a download button. The check is an anonymous request to the GitHub releases.
 

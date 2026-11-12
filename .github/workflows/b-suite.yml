@@ -25,6 +25,10 @@ env:
 jobs:
   windows:
     name: Windows ${{ matrix.arch }}
+    # col tag gira solo se la variabile del repository WINDOWS_CI è "true" (Settings > Secrets and variables >
+    # Actions > Variables). Finché è spenta gli installer Windows li compila un collaboratore con
+    # tools/release-windows.ps1; a mano (Run workflow) gira sempre.
+    if: github.event_name == 'workflow_dispatch' || vars.WINDOWS_CI == 'true'
     runs-on: windows-latest
     defaults:
       run:
