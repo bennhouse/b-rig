@@ -334,7 +334,7 @@ namespace { const char* kBoostNames[3] = { "off", "vol", "vol + eq" }; constexpr
 BAmpEditor::BAmpEditor (BAmpProcessor& p)
     : AudioProcessorEditor (&p), proc (p), head (p), tuner (p),
       channelChoice (*p.apvts.getParameter (BAmpIDs::channel), { "clean", "crunch", "lead" }),
-      osChoice (*p.apvts.getParameter (BAmpIDs::os), { "2x", "4x" })
+      osChoice (*p.apvts.getParameter (BAmpIDs::os), { "off", "2x", "4x" })
 {
     const char* ids[10] = { BAmpIDs::gate, BAmpIDs::tight, BAmpIDs::gain, BAmpIDs::bass, BAmpIDs::mid, BAmpIDs::treble, BAmpIDs::presence, BAmpIDs::resonance, BAmpIDs::master, BAmpIDs::level };
     for (int i = 0; i < 10; ++i)
@@ -348,8 +348,18 @@ BAmpEditor::BAmpEditor (BAmpProcessor& p)
         vb.drag = [prm] (float, float s, float dx) { return prm->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, s + dx * 0.003f)); };
         vb.sizeSamples = db ? juce::StringArray { "-100.0 dB" } : juce::StringArray { "100 %" };
         // i controlli di ogni testata tornano al default di quella testata (doppio clic)
-        if (i >= 1 && i <= 8) vb.defaultValue = [this, id = ids[i]] { return BAmpProcessor::headDefault (id, juce::jlimit (0, 2, (int) proc.apvts.getRawParameterValue (BAmpIDs::channel)->load())); };
+        vb.defaultValue = [this, id = ids[i]] { return BAmpProcessor::headDefault (id, juce::jlimit (0, 2, (int) proc.apvts.getRawParameterValue (BAmpIDs::channel)->load())); };
         addAndMakeVisible (vb);
+    }
+    {
+        auto* prm = p.apvts.getParameter (BAmpIDs::boostTone);
+        toneBox.setParameter (prm);
+        toneBox.format = [] (float v) { return juce::String (juce::roundToInt (v)) + " %"; };
+        toneBox.step = [] (float v, int d) { return std::round (v) + 5.0f * (float) d; };
+        toneBox.drag = [prm] (float, float s, float dx) { return prm->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, s + dx * 0.003f)); };
+        toneBox.sizeSamples = { "100 %" };
+        toneBox.defaultValue = [] { return 50.0f; };
+        addChildComponent (toneBox);
     }
     addAndMakeVisible (head); head.toBack();
     addAndMakeVisible (channelChoice); addAndMakeVisible (osChoice);
@@ -359,7 +369,6 @@ BAmpEditor::BAmpEditor (BAmpProcessor& p)
     tunerBtn.caption = "tuner"; tunerBtn.isOn = [this] { return tuner.isVisible(); };
     // il tuner si apre sempre con il mute acceso (si può spegnere)
     tunerBtn.onClick = [this] { const bool show = ! tuner.isVisible(); tuner.setVisible (show); proc.tunerMute.store (show); tuner.toFront (false); };
-    autoBtn.caption = "auto"; autoBtn.isOn = [&p] { return p.isAutoListening(); }; autoBtn.onClick = [&p] { p.toggleAuto(); };
     boostBtn.caption = kBoostNames[0];
     boostBtn.isOn = [&p] { return p.apvts.getRawParameterValue (BAmpIDs::boost)->load() > 0.5f; };
     boostBtn.onClick = [&p, this]   // a rotazione: off -> vol -> vol + eq -> off
@@ -369,7 +378,7 @@ BAmpEditor::BAmpEditor (BAmpProcessor& p)
         prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) next)); prm->endChangeGesture();
         boostBtn.caption = kBoostNames[next];
     };
-    addAndMakeVisible (tunerBtn); addAndMakeVisible (autoBtn); addAndMakeVisible (boostBtn);
+    addAndMakeVisible (tunerBtn); addAndMakeVisible (boostBtn);
     tunerBtn.setVisible (! ui::kInRig);   // in b-rig c'è il tuner dell'app
     gateCheck.bindTo (*p.apvts.getParameter (BAmpIDs::gateOn));
     addAndMakeVisible (gateCheck);
@@ -400,9 +409,9 @@ void BAmpEditor::resized()
 }
 
 // tre righe sotto la testata:
-//   1. noise gate [x] + soglia, boost [ off | vol | vol + eq ]
+//   1. noise gate [x] + soglia, boost [ off | vol | vol + eq ] e, con vol + eq, tone
 //   2. gain, tight  |  bass, mid, treble  |  presence, resonance   (gruppi distanziati, con un separatore)
-//   3. allineati a destra: master, level, [auto]
+//   3. allineati a destra: master, level
 void BAmpEditor::layoutControls()
 {
     const int left = kMargin, right = kW - kMargin, groupGap = 40;
@@ -419,7 +428,9 @@ void BAmpEditor::layoutControls()
         gateCheck.setBounds (juce::Rectangle<int> (x, y, kBoxSize, kControlH).withSizeKeepingCentre (kBoxSize, kBoxSize).expanded (kHitPad)); x += kBoxSize + kGapGroup;
         put (0, x); x += groupGap;
         boostLabel = { x, y, tw ("boost"), kControlH }; x += tw ("boost") + kGapLabel;
-        boostBtn.setBounds (x, y, kBoostW, kControlH);
+        boostBtn.setBounds (x, y, kBoostW, kControlH); x += kBoostW + kGapGroup;
+        toneLabel = { x, y, tw ("tone"), kControlH }; x += tw ("tone") + kGapLabel;
+        toneBox.setBounds (x, y, toneBox.getIdealWidth(), kControlH);
     }
     // riga 2
     y += kControlH + kGapInner;
@@ -433,10 +444,9 @@ void BAmpEditor::layoutControls()
     // riga 3, allineata a destra
     y += kControlH + kGapInner;
     {
-        int w = tw (kLabels[8]) + kGapLabel + boxes[8].getIdealWidth() + kGapGroup + tw (kLabels[9]) + kGapLabel + boxes[9].getIdealWidth() + kGapInner + 54;
+        int w = tw (kLabels[8]) + kGapLabel + boxes[8].getIdealWidth() + kGapGroup + tw (kLabels[9]) + kGapLabel + boxes[9].getIdealWidth();
         int x = right - w;
-        put (8, x); x += kGapGroup; put (9, x); x += kGapInner;
-        autoBtn.setBounds (x, y, 54, kControlH);
+        put (8, x); x += kGapGroup; put (9, x);
     }
 }
 
@@ -450,14 +460,13 @@ void BAmpEditor::paint (juce::Graphics& g)
     for (int i = 0; i < 10; ++i) drawLabel (g, kLabels[i], labelAreas[(size_t) i], labelStatic, kLabelSize);
     drawLabel (g, "noise gate", gateLabel, labelStatic, kLabelSize);
     drawLabel (g, "boost", boostLabel, labelStatic, kLabelSize);
+    if (toneBox.isVisible()) drawLabel (g, "tone", toneLabel, labelStatic, kLabelSize);
     // separatori tra i gruppi gain-tight / bass-mid-treble / presence-resonance: un trattino verticale discreto
     g.setColour (frame);
     for (auto d : groupDividers) g.fillRect ((float) d.x, (float) d.y + 4.0f, kLine, (float) kControlH - 8.0f);
-    // in basso: a sinistra lo stato di auto (mentre misura), a destra il livello d'uscita
+    // in basso a destra il livello d'uscita
     const float base = (float) kH - 14.0f;
     const float o = proc.outRmsDb.load();
-    if (proc.isAutoListening())
-        drawAtBaseline (g, "auto: play normally for " + num (proc.autoRemaining(), 1) + " s (pauses are ignored)", (float) kMargin, base, col, kAxisSize, juce::Justification::left, Face::MonoRegular);
     drawAtBaseline (g, "out " + (o > -90.0f ? num (o, 1) : juce::String ("--")) + " dBFS rms", (float) kW - kMargin, base, info, kAxisSize, juce::Justification::right, Face::MonoRegular);
 }
 
@@ -475,12 +484,14 @@ void BAmpEditor::timerCallback()
     boxes[0].setEnabled (proc.apvts.getRawParameterValue (BAmpIDs::gateOn)->load() > 0.5f);   // gate spento: soglia grigia
     if (const juce::String bc = kBoostNames[juce::jlimit (0, 2, (int) proc.apvts.getRawParameterValue (BAmpIDs::boost)->load())]; bc != boostBtn.caption)
     { boostBtn.caption = bc; boostBtn.repaint(); }
+    if (const bool showTone = (int) proc.apvts.getRawParameterValue (BAmpIDs::boost)->load() == 2; showTone != toneBox.isVisible())
+    { toneBox.setVisible (showTone); repaint (toneLabel); }
     head.glow += 0.25f * (juce::jlimit (0.0f, 1.0f, proc.satEnv.load() * 1.2f) - head.glow);
     head.repaint();
     if (tuner.isVisible()) { tuner.analyse(); tuner.repaint(); }
     else tuner.analyse();   // svuota comunque il FIFO
     juce::int64 sig = 17;
     for (auto* q : proc.getParameters()) sig = sig * 31 + (juce::int64) (q->getValue() * 1.0e6f);
-    sig = sig * 31 + (juce::int64) (proc.outRmsDb.load() * 10.0f) + (proc.isAutoListening() ? 7 : 0) + (juce::int64) (proc.autoRemaining() * 10.0f);
-    if (sig != lastSig) { lastSig = sig; repaint (0, kH - 30, kW, 30); for (auto& b : boxes) b.repaint(); autoBtn.repaint(); boostBtn.repaint(); }
+    sig = sig * 31 + (juce::int64) (proc.outRmsDb.load() * 10.0f);
+    if (sig != lastSig) { lastSig = sig; repaint (0, kH - 30, kW, 30); for (auto& b : boxes) b.repaint(); toneBox.repaint(); boostBtn.repaint(); }
 }

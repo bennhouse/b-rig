@@ -3,8 +3,8 @@
 // [ clean | crunch | lead ], [ 2x | 4x ] e il diapason del tuner. Al centro la silhouette frontale della testata
 // attiva (griglia e colore d'accento diversi per canale, bagliore interno proporzionale alla saturazione) con dentro
 // La testata (solo corpo e griglia, simmetrica) occupa il 50 % della larghezza; sotto, tre righe di controlli:
-// noise gate [x] + soglia / gain, tight | bass, mid, treble | presence, resonance / (a destra) master, level [auto].
-// noise gate [x] + soglia + boost (off / vol / vol + eq, un solo pulsante a rotazione)
+// noise gate [x] + soglia + boost (off / vol / vol + eq, un solo pulsante a rotazione; con vol + eq accanto c'è tone)
+// gain, tight | bass, mid, treble | presence, resonance / (a destra) master, level.
 // Il tuner copre tutta la finestra: nota gigante, Hz, ago/strobe, [mute] (acceso a ogni apertura); un clic in un punto libero lo chiude.
 // Testata: maniglia e piedini uguali per i tre ampli; un clic sulla spia la gira e mostra il retro (valvole dalla fessura).
 #include "PluginProcessor.h"
@@ -78,7 +78,9 @@ private:
     AmpHead head;
     TunerOverlay tuner;
     ui::SegmentedChoice channelChoice, osChoice;
-    SmallButton tunerBtn, autoBtn, boostBtn;
+    SmallButton tunerBtn, boostBtn;
+    ui::ValueBox toneBox;   // tono del boost: si vede solo con vol + eq
+    juce::Rectangle<int> toneLabel;
     std::array<ui::ValueBox, 10> boxes;
     static constexpr const char* kLabels[10] = { "threshold", "tight", "gain", "bass", "mid", "treble", "presence", "resonance", "master", "level" };
     std::array<juce::Rectangle<int>, 10> labelAreas {};

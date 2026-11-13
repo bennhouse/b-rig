@@ -16,9 +16,10 @@ BAmpProcessor::BAmpProcessor()
     for (int i = 0; i < 12; ++i) p[i] = apvts.getRawParameterValue (ids[i]);
     pGateOn = apvts.getRawParameterValue (BAmpIDs::gateOn);
     pBoost = apvts.getRawParameterValue (BAmpIDs::boost);
-    for (const char* id : { BAmpIDs::tight, BAmpIDs::gain, BAmpIDs::bass, BAmpIDs::mid, BAmpIDs::treble, BAmpIDs::presence, BAmpIDs::resonance, BAmpIDs::master })
+    pBoostTone = apvts.getRawParameterValue (BAmpIDs::boostTone);
+    for (const char* id : { BAmpIDs::tight, BAmpIDs::gain, BAmpIDs::bass, BAmpIDs::mid, BAmpIDs::treble, BAmpIDs::presence, BAmpIDs::resonance,
+                            BAmpIDs::master, BAmpIDs::level, BAmpIDs::gate, BAmpIDs::gateOn, BAmpIDs::boost, BAmpIDs::boostTone, BAmpIDs::os })
         headMemory.add (apvts.getParameter (id), [id] (int ch) { return headDefault (id, ch); });
-    startTimerHz (20);
 }
 
 // default di ciascuna testata (i default dei parametri sono quelli del crunch, il canale di partenza)
@@ -34,6 +35,12 @@ float BAmpProcessor::headDefault (const char* id, int ch)
         { BAmpIDs::presence,  { 35, 40, 45 } },
         { BAmpIDs::resonance, { 35, 40, 55 } },
         { BAmpIDs::master,    { 50, 50, 50 } },
+        { BAmpIDs::level,     { 0, 0, 0 } },
+        { BAmpIDs::gate,      { -60, -60, -60 } },
+        { BAmpIDs::gateOn,    { 0, 0, 0 } },        // noise gate spento di default
+        { BAmpIDs::boost,     { 0, 0, 0 } },
+        { BAmpIDs::boostTone, { 50, 50, 50 } },
+        { BAmpIDs::os,        { 1, 1, 1 } },        // 2x
     };
     for (const auto& d : table) if (juce::String (d.id) == id) return d.v[juce::jlimit (0, 2, ch)];
     return 0.0f;
@@ -46,9 +53,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout BAmpProcessor::createLayout(
     auto f = [&] (const char* id, const char* name, NormalisableRange<float> r, float def, const char* unit)
     { l.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 1 }, name, r, def, AudioParameterFloatAttributes().withLabel (unit))); };
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { BAmpIDs::channel, 1 }, "Channel", StringArray { "Clean", "Crunch", "Lead" }, 1));
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { BAmpIDs::os, 1 }, "Oversampling", StringArray { "2x", "4x" }, 0));
+    // off, 2x, 4x (i progetti salvati prima, con 0 = 2x e 1 = 4x, si rimappano in setStateInformation)
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { BAmpIDs::os, 1 }, "Oversampling", StringArray { "Off", "2x", "4x" }, 1));
     f (BAmpIDs::gate, "Gate", { -90.0f, -20.0f, 0.5f }, -60.0f, "dB");
-    l.add (std::make_unique<AudioParameterBool> (ParameterID { BAmpIDs::gateOn, 1 }, "Noise gate", true));
+    l.add (std::make_unique<AudioParameterBool> (ParameterID { BAmpIDs::gateOn, 1 }, "Noise gate", false));
     f (BAmpIDs::tight, "Tight", { 0.0f, 100.0f, 1.0f }, 0.0f, "%");
     f (BAmpIDs::gain, "Gain", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
     f (BAmpIDs::bass, "Bass", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
@@ -59,6 +67,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BAmpProcessor::createLayout(
     f (BAmpIDs::master, "Master", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
     f (BAmpIDs::level, "Level", { -24.0f, 12.0f, 0.1f }, 0.0f, "dB");
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { BAmpIDs::boost, 1 }, "Boost", StringArray { "Off", "Vol", "Vol + EQ" }, 0));
+    f (BAmpIDs::boostTone, "Boost tone", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
     return l;
 }
 
@@ -91,15 +100,29 @@ void BAmpProcessor::prepareToPlay (double rate, int block)
     potSm.reset (fs, 0.02); potSm.setCurrentAndTargetValue (potFade (p[P_GAIN]->load() / 100.0f));
     { const int b = (int) pBoost->load(); boostGainSm.setCurrentAndTargetValue (b > 0 ? 2.0f : 1.0f); boostEqSm.setCurrentAndTargetValue (b > 1 ? 1.0f : 0.0f); }
     boostLowCut.set (fs, 90.0); boostLowCut.reset();
-    boostArt = {}; boostArt.set (sp::Bq::Peak, fs, 1600.0, 0.8, 4.5);
-    boostFizz = {}; boostFizz.set (sp::Bq::HighShelf, fs, 5500.0, 0.7071, -3.0);
+    boostArt = {}; boostFizz = {}; lastBoostTone = -1.0f;
+    setBoostTone (pBoostTone->load() / 100.0f);
     boostShaper.k = 1.25f; boostPrev = 0;
     cfDc.set (fs, 8.0); cfDc.reset(); paDc.set (fs, 8.0); paDc.reset(); otLow.set (fs, 110.0); otLow.reset();
     rampStep = 1.0f / (0.0075f * (float) fs); chanRamp = 1.0f; pendingChannel = -1;
-    curChannel = -1; lastTight = -1; lastOs = -1; muteG = 1.0f; autoG = 1.0f;
+    curChannel = -1; lastTight = -1; lastOs = -1; muteG = 1.0f;
     const int ch = juce::jlimit (0, 2, (int) p[P_CH]->load());
     configureChannel (ch, p[P_TIGHT]->load() / 100.0f);
     setLatencySamples ((int) std::ceil (os4.getLatencyInSamples()));   // 4x ha la latenza più alta; 2x viene compensato al suo valore
+}
+
+int BAmpProcessor::osFromParam (float v) noexcept { const int i = juce::roundToInt (v); return i == 0 ? 1 : i == 2 ? 4 : 2; }
+
+float BAmpProcessor::osLatency() const noexcept { return osFactor == 4 ? (float) os4.getLatencyInSamples() : osFactor == 2 ? (float) os2.getLatencyInSamples() : 0.0f; }
+
+// tono del boost vol + eq: 0 = scuro (articolazione a 1 kHz, -8 dB sopra 5,5 kHz), 50 % = il boost di sempre
+// (1,6 kHz e -3 dB), 100 % = brillante (2,4 kHz e +2 dB)
+void BAmpProcessor::setBoostTone (float t) noexcept
+{
+    if (std::abs (t - lastBoostTone) < 0.002f) return;
+    lastBoostTone = t;
+    boostArt.set (sp::Bq::Peak, fs, 1600.0 * std::exp2 (1.2 * (t - 0.5)), 0.8, 4.5);
+    boostFizz.set (sp::Bq::HighShelf, fs, 5500.0, 0.7071, -3.0 + 10.0 * (t - 0.5));
 }
 
 float BAmpProcessor::stageDrive (int ch, int k, float g) noexcept
@@ -175,14 +198,6 @@ void BAmpProcessor::resetChannelState() noexcept
     os2.reset(); os4.reset();
 }
 
-bool BAmpProcessor::applyAutoIfReady()
-{
-    if (! autoReady.exchange (false)) return false;
-    auto* prm = apvts.getParameter (BAmpIDs::level);
-    prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 (juce::jlimit (-24.0f, 12.0f, autoResult.load()))); prm->endChangeGesture();
-    return true;
-}
-
 float BAmpProcessor::toneStackDb (double hz) const { return (float) (20.0 * std::log10 (juce::jmax (1.0e-6, tone.magnitude (hz, fs)))); }
 
 void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -190,14 +205,13 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     juce::ScopedNoDenormals nd;
     const int numIn = getTotalNumInputChannels(), numOut = getTotalNumOutputChannels(), n = buffer.getNumSamples();
     const int ch = juce::jlimit (0, 2, (int) p[P_CH]->load());
-    const int osWant = p[P_OS]->load() > 0.5f ? 4 : 2;
+    const int osWant = osFromParam (p[P_OS]->load());
     const float gateDb = p[P_GATE]->load(), tight = p[P_TIGHT]->load() / 100.0f, gain01 = p[P_GAIN]->load() / 100.0f;
     const float bass = p[P_BASS]->load() / 100.0f, mid = p[P_MID]->load() / 100.0f, treb = p[P_TREB]->load() / 100.0f;
     const float pres = p[P_PRES]->load() / 100.0f, res = p[P_RES]->load() / 100.0f;
     masterSm.setTargetValue (juce::Decibels::decibelsToGain (-30.0f + 36.0f * p[P_MASTER]->load() / 100.0f));
     levelSm.setTargetValue (juce::Decibels::decibelsToGain (p[P_LEVEL]->load()));
-    if (const int cmd = autoCmd.exchange (0); cmd == 1) { autoLeft.store ((int) (3.0 * fs)); accIn = accOut = 0; accN = 0; }
-    else if (cmd == 2) autoLeft.store (0);
+    setBoostTone (pBoostTone->load() / 100.0f);
 
     rampHold = false;   // nuovo blocco: già calcolato con il canale nuovo, la rampa può risalire
     // cambio canale / oversampling: rampa 15 ms (giù, reset degli stati, su)
@@ -224,7 +238,6 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     float* x = mono.getWritePointer (0);
     const float* in0 = buffer.getReadPointer (0);
     const float* in1 = numIn > 1 ? buffer.getReadPointer (1) : nullptr;
-    float diPeak = 0;
     static thread_local std::array<float, 4096> gateG, snrG;
     for (int i = 0; i < n; ++i)
     {
@@ -237,7 +250,6 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
             if (n1 > 0) tunerBuf[(size_t) s1] = tl;
             tunerFifo.finishedWrite (n1);
         }
-        diPeak = juce::jmax (diPeak, std::abs (di));
         float v = inHp.process (di);
         // gate: il rilevatore legge la DI pulita PRIMA del notch (un notch a Q 40 "suona" per centinaia di ms
         // dopo lo stop e terrebbe aperto il gate)
@@ -276,11 +288,12 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     if (useBoost) for (int i = 0; i < n; ++i) x[i] = boostMid.process (x[i] - boostHp.lp (x[i]));
     else if (useBright || curChannel == Crunch) for (int i = 0; i < n; ++i) x[i] = brightShelf.process (x[i]);
 
-    // stadi ADAA a oversampling
+    // stadi ADAA a oversampling (o, con l'oversampling spento, alla frequenza della sessione: l'ADAA tiene
+    // comunque basso l'aliasing, che resta un po' più udibile solo sul lead con molto gain)
     {
         juce::dsp::AudioBlock<float> blk (mono.getArrayOfWritePointers(), 1, (size_t) n);
         auto& osp = osFactor == 4 ? os4 : os2;
-        auto up = osp.processSamplesUp (blk);
+        auto up = osFactor == 1 ? blk : osp.processSamplesUp (blk);
         float* u = up.getChannelPointer (0);
         const int un = (int) up.getNumSamples(), ns = kStages[curChannel];
         float clipAcc = 0;
@@ -294,7 +307,7 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
         for (int k = 0; k < ns; ++k) clipAcc = juce::jmax (clipAcc, stages[(size_t) k].clip);
         satEnv.store (clipAcc);
-        osp.processSamplesDown (blk);
+        if (osFactor != 1) osp.processSamplesDown (blk);
     }
 
     // gate B (VCA + passa-basso dinamico 12 kHz -> 3 kHz quando chiude), tone stack, master, finale, cassa, level
@@ -306,7 +319,6 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         cleanEq[1].set (sp::Bq::Peak, fs, 650.0, 0.7, 16.0 * (mid - 0.5) - 2.0);
         cleanEq[2].set (sp::Bq::HighShelf, fs, 2200.0, 0.7071, 20.0 * (treb - 0.5) + 2.0);
     }
-    const int left0 = autoLeft.load(); int left = left0;
     const bool mute = tunerMute.load (std::memory_order_relaxed);
     const float muteStep = 1.0f / (0.01f * (float) fs);
     double outPow = 0;
@@ -351,24 +363,13 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
             {
                 chanRamp = 0.0f; osFactor = osWant; rampHold = true;   // il resto del blocco è del canale vecchio: resta a zero
                 configureChannel (pendingChannel, tight); resetChannelState(); pendingChannel = -1;
-                setLatencySamples ((int) std::ceil ((osFactor == 4 ? os4 : os2).getLatencyInSamples()));
+                setLatencySamples ((int) std::ceil (osLatency()));
             }
         }
         else if (chanRamp < 1.0f && ! rampHold) chanRamp = juce::jmin (1.0f, chanRamp + rampStep);
         v *= chanRamp;
-        // level: manuale o auto (RMS di uscita = RMS della DI, misurato solo sopra -55 dBFS)
-        const float lv = levelSm.getNextValue();
-        if (left > 0)
-        {
-            if (diPeak > 0.00178f) { accIn += (double) in0[i] * in0[i]; accOut += (double) v * v; ++accN; }
-            if (--left == 0)
-            {
-                if (accN > 0 && accOut > 1e-12) autoResult.store ((float) (10.0 * std::log10 (accIn / accOut)));
-                else autoResult.store (p[P_LEVEL]->load());
-                autoReady.store (true);
-            }
-        }
-        v *= lv;
+        // level
+        v *= levelSm.getNextValue();
         muteG += ((mute ? 0.0f : 1.0f) - muteG) * muteStep;
         v *= muteG;
         outPow += (double) v * v;
@@ -377,17 +378,42 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     // gain a 0 (potenziometro chiuso e fermo): silenzio esatto, nemmeno il residuo numerico della polarizzazione
     // degli stadi amplificato da quelli dopo
     if (! potSm.isSmoothing() && potSm.getTargetValue() <= 0.0f) { buffer.clear(); outPow = 0; }
-    autoLeft.store (left);
     gateGain.store (gateG[(size_t) juce::jmin (n - 1, 4095)]);
     outRmsDb.store (outPow > 0 ? (float) (10.0 * std::log10 (outPow / n)) : -100.0f);
     for (auto* f : { &voiceEq, &boostArt, &boostFizz, &brightCap, &tubeEq, &cleanEq[0], &cleanEq[1], &cleanEq[2], &diLp, &inHp, &notch50, &notch100, &tunerLp, &resPeak, &presShelf, &safeLp, &boostMid, &brightShelf }) f->flush();
     tone.flush();
 }
 
-void BAmpProcessor::getStateInformation (juce::MemoryBlock& d) { if (auto x = apvts.copyState().createXml()) copyXmlToBinary (*x, d); }
+// stato: i parametri e, in HEADS, i controlli delle altre due testate
+void BAmpProcessor::getStateInformation (juce::MemoryBlock& d)
+{
+    auto t = apvts.copyState();
+    if (auto old = t.getChildWithName ("HEADS"); old.isValid()) t.removeChild (old, nullptr);
+    t.appendChild (headMemory.save ("HEADS"), nullptr);
+    t.setProperty ("osOrder", 2, nullptr);   // oversampling nell'ordine off, 2x, 4x
+    if (auto x = t.createXml()) copyXmlToBinary (*x, d);
+}
+
 void BAmpProcessor::setStateInformation (const void* d, int s)
 {
-    if (auto x = getXmlFromBinary (d, s)) if (x->hasTagName (apvts.state.getType())) apvts.replaceState (juce::ValueTree::fromXml (*x));
+    auto x = getXmlFromBinary (d, s);
+    if (x == nullptr || ! x->hasTagName (apvts.state.getType())) return;
+    auto t = juce::ValueTree::fromXml (*x);
+    auto heads = t.getChildWithName ("HEADS");
+    if (heads.isValid()) t.removeChild (heads, nullptr);
+    // prima l'oversampling era 2x (0) e 4x (1): ora off (0), 2x (1), 4x (2)
+    if ((int) t.getProperty ("osOrder", 1) < 2)
+    {
+        auto remap = [] (float v) { return v < 0.5f ? 1.0f : 2.0f; };
+        if (auto os = t.getChildWithProperty ("id", BAmpIDs::os); os.isValid()) os.setProperty ("value", remap ((float) os["value"]), nullptr);
+        for (auto c : heads) if (c.hasProperty (BAmpIDs::os)) c.setProperty (BAmpIDs::os, remap ((float) c[BAmpIDs::os]), nullptr);
+        t.setProperty ("osOrder", 2, nullptr);
+    }
+    // progetti di prima: il noise gate era acceso di default e non veniva scritto se non toccato
+    const bool hadGate = [&] { for (auto c : t) if (c["id"].toString() == BAmpIDs::gateOn) return true; return false; }();
+    apvts.replaceState (t);
+    if (! hadGate) if (auto* g = apvts.getParameter (BAmpIDs::gateOn)) g->setValueNotifyingHost (1.0f);
+    headMemory.load (heads);
 }
 juce::AudioProcessorEditor* BAmpProcessor::createEditor() { return new BAmpEditor (*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new BAmpProcessor(); }

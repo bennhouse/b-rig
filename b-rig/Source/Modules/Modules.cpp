@@ -31,7 +31,7 @@ const std::vector<ModuleInfo>& modules()
              "Shapes the DI before the amp: a low cut that follows your tuning, a palm-mute clamp, pick bite and a mid push.\nControls: tuning, clamp, bite, push, gain.\nAfter b-focus, before any drive or amp.", rigMake_tight);
         // CORE / AMP
         add ("amp", 0xffe11d48, C::core, 50,
-             "Three-channel amp head (clean, crunch, lead) with noise gate and boost. It starts muted: click to arm it.\nControls: channel, gain, tight, bass, mid, treble, presence, resonance, master.\nAfter the DI tools, before b-blend.", rigMake_amp, true);
+             "Three-channel amp head (clean, crunch, lead) with noise gate and boost. It needs b-blend after it, with your own cab IR: until then it stays muted.\nControls: channel, gain, tight, bass, mid, treble, presence, resonance, master, level, boost and tone. Every head keeps its own settings.\nAfter the DI tools, before b-blend.", rigMake_amp, true);
         add ("blend", 0xff14b8a6, C::core, 60,
              "Blends up to four phase-aligned cab IRs on one pad and adds speaker thump and air.\nControls: the pad, thump, air, low cut, high cut.\nRight after the amp.", rigMake_blend);
         v.back().hasCab = rigBlendHasIr;
@@ -49,7 +49,7 @@ const std::vector<ModuleInfo>& modules()
         add ("verb", 0xff06b6d4, C::post, 84,
              "Reverb: room, plate, hall, spring and shimmer, with early reflections, an 8-line feedback network, freeze and ducking.\nControls: type, decay, predelay, size, low cut, hi cut, mix, early, damp, mod, duck, stereo, freeze, output.\nAfter the cab and the delay.", rigMake_verb);
         add ("space", 0xffa78bfa, C::post, 85,
-             "Puts the amp in a room: size, walls, amp type, where the amp and the listener stand and where the amp points.\nControls: space, walls, source, dist comp, width, depth, ceiling, angle, air.\nAfter the cab, at the end of the guitar chain.", rigMake_space);
+             "Puts the amp in a room: the room with its materials, the amp type, where the amp and the listener stand and where the amp points.\nControls: room, source, dist comp, mix, width, depth, ceiling, angle, air.\nAfter the cab, at the end of the guitar chain.", rigMake_space);
         add ("dynaverb", 0xfffacc15, C::post, 82,
              "Hears when you play lead lines on the high strings and only then adds a mid boost and a stereo delay. Riffs on the low strings pass untouched.\nControls: crossover, duck delay, sync, split, boost, delay, space, speed.\nAfter the cab.", rigMake_dynaverb);
         // MASTER / UTIL

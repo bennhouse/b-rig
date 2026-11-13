@@ -22,25 +22,35 @@ void DropDisplay::setSemitones (int v)
     a->setValueNotifyingHost (a->convertTo0to1 ((float) juce::jlimit (lo, hi, v)));
 }
 
+juce::Rectangle<int> DropDisplay::window() const
+{
+    const auto d = drum();
+    return juce::Rectangle<float> (d.getX() + 1.0f, d.getCentreY() - kSlot * 0.5f + 1.0f, d.getWidth() - 2.0f, kSlot - 2.0f).toNearestInt();
+}
+
 void DropDisplay::mouseDown (const juce::MouseEvent& e)
 {
     if (locked() || ! drum().expanded (8.0f).contains (e.position)) return;
     dragging = true;
     startValue = semisOf (proc);
+    rollPos = (float) startValue;
     startY = e.position.y;
     nudge = 0.0f;
     proc.apvts.getParameter (BDropIDs::semitones)->beginChangeGesture();
 }
 
-// il rullo segue il dito per mezzo scatto, poi passa al numero dopo: si sente lo scatto, niente animazioni
+// il rullo segue il mouse con continuità; il valore passa al semitono dopo solo quando il rullo ci arriva oltre
+// kHold (più di metà): fermandosi a metà strada non salta avanti e indietro
 void DropDisplay::mouseDrag (const juce::MouseEvent& e)
 {
     if (! dragging) return;
-    const float dy = startY - e.position.y;   // su = più semitoni
-    const int steps = juce::roundToInt (dy / kStepPx);
-    setSemitones (startValue + steps);
-    const int now = semisOf (proc);
-    nudge = now == startValue + steps ? (dy / kStepPx - (float) steps) * kSlot * 0.5f : 0.0f;   // fermo al limite del range
+    int lo, hi; BDropProcessor::rangeLimits ((int) proc.apvts.getRawParameterValue (BDropIDs::range)->load(), lo, hi);
+    rollPos = juce::jlimit ((float) lo - 0.4f, (float) hi + 0.4f, (float) startValue + (startY - e.position.y) / kStepPx);   // su = più semitoni
+    int v = semisOf (proc);
+    while (rollPos >= (float) v + kHold && v < hi) ++v;
+    while (rollPos <= (float) v - kHold && v > lo) --v;
+    if (v != semisOf (proc)) setSemitones (v);
+    nudge = juce::jlimit (-0.5f, 0.5f, rollPos - (float) v) * kSlot;
     repaint();
 }
 
@@ -53,12 +63,28 @@ void DropDisplay::mouseUp (const juce::MouseEvent&)
     repaint();
 }
 
+// doppio clic: torna a 0 e il numero si può scrivere (Invio conferma, Esc o un clic fuori lasciano 0)
 void DropDisplay::mouseDoubleClick (const juce::MouseEvent& e)
 {
     if (locked() || ! drum().contains (e.position)) return;
     auto* a = proc.apvts.getParameter (BDropIDs::semitones);
     a->beginChangeGesture(); setSemitones (0); a->endChangeGesture();
+    startTyping();
     repaint();
+}
+
+void DropDisplay::startTyping()
+{
+    editor.setFont (ui::face (ui::Face::MonoMedium, 34.0f));
+    editor.setJustification (juce::Justification::centred);
+    editor.setInputRestrictions (4, "+-0123456789");
+    editor.onCommit = [this] (const juce::String& t)
+    {
+        auto* a = proc.apvts.getParameter (BDropIDs::semitones);
+        a->beginChangeGesture(); setSemitones (juce::roundToInt (ui::InlineEditor::parseNumber (t.removeCharacters ("+")))); a->endChangeGesture();
+        repaint();
+    };
+    editor.start (*this, window(), signedText (semisOf (proc)));
 }
 
 void DropDisplay::mouseMove (const juce::MouseEvent& e)
@@ -66,11 +92,14 @@ void DropDisplay::mouseMove (const juce::MouseEvent& e)
     setMouseCursor (! locked() && drum().contains (e.position) ? juce::MouseCursor::UpDownResizeCursor : juce::MouseCursor::NormalCursor);
 }
 
+// rotella: uno scatto = un semitono; trackpad: un semitono ogni tratto di scorrimento (non a ogni evento)
 void DropDisplay::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
-    if (locked() || ! zone().contains (e.position)) return;
+    if (locked() || ! zone().contains (e.position) || w.deltaY == 0.0f) return;
+    if (w.deltaY * wheelAcc < 0.0f) wheelAcc = 0.0f;   // cambio di direzione: si riparte da zero
     wheelAcc += w.deltaY;
-    if (std::abs (wheelAcc) < 0.08f) return;
+    const float step = w.isSmooth ? 0.3f : 0.0f;
+    if (std::abs (wheelAcc) <= step) return;
     auto* a = proc.apvts.getParameter (BDropIDs::semitones);
     a->beginChangeGesture(); setSemitones (semisOf (proc) + (wheelAcc > 0 ? 1 : -1)); a->endChangeGesture();
     wheelAcc = 0.0f;
@@ -143,7 +172,7 @@ void DropDisplay::paint (juce::Graphics& g)
                             : st < 0 ? juce::String (-st) + (st == -1 ? " semitone down" : " semitones down")
                                      : juce::String (st) + (st == 1 ? " semitone up" : " semitones up");
     drawAtBaseline (g, what, d.getCentreX(), z.getBottom() - 30.0f, st == 0 ? info : labelStatic, kInfoSize, juce::Justification::horizontallyCentred, Face::SansRegular);
-    drawAtBaseline (g, lock ? "" : "drag or scroll", d.getCentreX(), z.getBottom() - 12.0f, info, kAxisSmall, juce::Justification::horizontallyCentred);
+    drawAtBaseline (g, lock ? "" : "drag, scroll or double-click", d.getCentreX(), z.getBottom() - 12.0f, info, kAxisSmall, juce::Justification::horizontallyCentred);
 
     // ---- forme d'onda: DI (grigio) e uscita (viola), agganciate a un passaggio per lo zero dell'ingresso
     auto a = all.toFloat().withTrimmedLeft (z.getWidth() + 12.0f);

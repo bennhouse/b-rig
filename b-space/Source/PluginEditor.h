@@ -1,8 +1,8 @@
 #pragma once
 // Interfaccia b-space (accento lavanda):
-//   b-space                                                  space [studio|garage|club|hall]
+//   b-space                                       room [studio|live|garage|club|hall|church]
 //   ┌──────────────────────────────────────────────────────────────────────────────────┐
-//     walls [treated|wood|brick|concrete]  source [cab 4x12|combo|omni]  dist comp [■]     stereo
+//     source [cab 4x12|combo|omni]  dist comp [■]  mix < 100 % >                            stereo
 //     width < 5.5 m >  depth < 7.0 m >  ceiling < 3.0 m >  angle < 0 deg >  air < 50 % >
 //     pianta della stanza: l'ampli (trascinabile, rotella = lo ruota) col suo cono, l'ascoltatore
 //     (trascinabile) e i percorsi del suono diretto e dei 4 rimbalzi sulle pareti
@@ -21,7 +21,7 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override { hover = 0; repaint(); }
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
-    void mouseDoubleClick (const juce::MouseEvent&) override;   // sull'ampli o sull'ascoltatore: torna al suo posto di partenza
+    void mouseDoubleClick (const juce::MouseEvent&) override;   // sull'ampli (posto e rotazione) o sull'ascoltatore: si torna alla partenza
 private:
     juce::Rectangle<float> roomRect() const;
     juce::Point<float> toScreen (juce::Point<float> metres) const;

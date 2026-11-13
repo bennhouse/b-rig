@@ -1,8 +1,7 @@
 #pragma once
-// Memoria per preset, solo per la sessione: quando l'utente cambia preset (tipo di compressione,
-// timbro del delverb, tipo di distorsione...) i valori modificati del preset lasciato vengono
-// ricordati e quelli del nuovo preset tornano come li aveva lasciati (o ai suoi default).
-// Non viene salvata col progetto: ricaricando il plugin si riparte dai default.
+// Memoria per preset: quando l'utente cambia preset (tipo di compressione, timbro del delverb, tipo di
+// distorsione...) i valori modificati del preset lasciato vengono ricordati e quelli del nuovo preset tornano come
+// li aveva lasciati (o ai suoi default). Di solito vale per la sessione; save/load la salvano col progetto.
 // Da usare solo sul message thread.
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <map>
@@ -43,6 +42,38 @@ public:
     {
         stored.erase (preset);
         for (const auto& e : entries) set (e.param, e.def (preset));
+    }
+
+    // Per i plugin che salvano la memoria con il progetto (b-amp: ogni testata ha i suoi controlli): i valori dei
+    // preset lasciati, per ID del parametro. Quelli del preset attivo sono nei parametri.
+    juce::ValueTree save (const juce::Identifier& type) const
+    {
+        juce::ValueTree t (type);
+        for (const auto& [preset, vals] : stored)
+        {
+            juce::ValueTree c ("P");
+            c.setProperty ("preset", preset, nullptr);
+            for (size_t i = 0; i < entries.size() && i < vals.size(); ++i)
+                if (auto* w = dynamic_cast<juce::AudioProcessorParameterWithID*> (entries[i].param)) c.setProperty (w->paramID, vals[i], nullptr);
+            t.appendChild (c, nullptr);
+        }
+        return t;
+    }
+
+    void load (const juce::ValueTree& t)
+    {
+        stored.clear();
+        for (auto c : t)
+        {
+            const int preset = (int) c.getProperty ("preset", -1);
+            if (preset < 0) continue;
+            auto& v = stored[preset];
+            for (const auto& e : entries)
+            {
+                const auto* w = dynamic_cast<juce::AudioProcessorParameterWithID*> (e.param);
+                v.push_back (w != nullptr && c.hasProperty (w->paramID) ? (float) c.getProperty (w->paramID) : e.def (preset));
+            }
+        }
     }
 
 private:

@@ -210,15 +210,11 @@ void SegmentedChoice::mouseUp (const juce::MouseEvent& e)
 }
 
 // ============================================================================ ValueBox
-namespace
+// Padding interno unico: uguale sui 4 lati (dentro il bordo da 1 px) e tra riquadro e frecce.
+float ValueBox::pad() const
 {
-    // Padding interno unico: uguale sui 4 lati (dentro il bordo da 1 px) e tra riquadro e frecce.
-    float valuePad()
-    {
-        static const float pad = ((float) kControlH - 2.0f - makeInkText ("0", kValueSize).capHeight) * 0.5f;
-        return pad;
-    }
-    int arrowGap() { return juce::roundToInt (valuePad()); }
+    if (cachedPad < 0.0f) cachedPad = ((float) scale.height - 2.0f - makeInkText ("0", scale.value).capHeight) * 0.5f;
+    return cachedPad;
 }
 
 void ValueBox::setParameter (juce::RangedAudioParameter* p)
@@ -238,7 +234,7 @@ juce::String ValueBox::currentText() const
 
 const InkText& ValueBox::inkFor (const juce::String& s) const
 {
-    if (s != cachedText || cachedText.isEmpty()) { cachedInk = makeValueInk (s); cachedText = s; }
+    if (s != cachedText || cachedText.isEmpty()) { cachedInk = makeValueInk (s, scale.value, scale.unit); cachedText = s; }
     return cachedInk;
 }
 
@@ -248,7 +244,7 @@ int ValueBox::getIdealWidth() const
     // che il parametro può mostrare, calcolato a priori. Si scorre tutto il range (513 punti più minimo,
     // massimo e default) con lo stesso formato del riquadro, si tengono le stringhe più lunghe e se ne misura
     // l'inchiostro; in più gli eventuali testi d'esempio. Il valore corrente non conta mai.
-    const int hash = sizeSamples.joinIntoString ("|").hashCode() ^ (int) (juce::pointer_sized_int) param ^ (format ? 0x5bd1e995 : 0);
+    const int hash = sizeSamples.joinIntoString ("|").hashCode() ^ (int) (juce::pointer_sized_int) param ^ (format ? 0x5bd1e995 : 0) ^ (int) (scale.value * 100.0f);
     if (hash != cachedSamplesHash || cachedSamplesWidth < 0.0f)
     {
         // un riquadro che cambia parametro (es. la banda EQ selezionata) non si restringe mai
@@ -265,11 +261,11 @@ int ValueBox::getIdealWidth() const
             for (const auto& s : all) longest = std::max (longest, s.length());
             for (const auto& s : all) if (s.length() >= longest - 1) cands.add (s);   // cifre Plex Mono a larghezza fissa
         }
-        for (const auto& s : cands) cachedSamplesWidth = std::max (cachedSamplesWidth, makeValueInk (s).width);
+        for (const auto& s : cands) cachedSamplesWidth = std::max (cachedSamplesWidth, makeValueInk (s, scale.value, scale.unit).width);
         cachedSamplesHash = hash;
     }
     const float w = cachedSamplesWidth;
-    const int boxW = (int) std::ceil (w + 2.0f * valuePad() + 2.0f) + extraWidth;
+    const int boxW = (int) std::ceil (w + 2.0f * pad() + 2.0f) + extraWidth;
     return 2 * (kArrowW + arrowGap()) + boxW;
 }
 
@@ -290,10 +286,10 @@ ValueBox::Zone ValueBox::zoneAt (juce::Point<int> p) const
 void ValueBox::paint (juce::Graphics& g)
 {
     if (param == nullptr) return;
-    const float pad = valuePad();
+    const float pd = pad();
     const int side = kArrowW + arrowGap();
-    const auto box = juce::Rectangle<float> ((float) side, std::round (((float) getHeight() - (float) kControlH) * 0.5f),
-                                             (float) (getWidth() - 2 * side), (float) kControlH);
+    const auto box = juce::Rectangle<float> ((float) side, std::round (((float) getHeight() - (float) scale.height) * 0.5f),
+                                             (float) (getWidth() - 2 * side), (float) scale.height);
     const bool en = isEnabled();
 
     // barra di riempimento sempre visibile: dal minimo (sinistra) al massimo (destra) del parametro
@@ -316,7 +312,7 @@ void ValueBox::paint (juce::Graphics& g)
     // valore centrato sull'inchiostro: stessa distanza da sinistra, destra, alto (cifre) e basso (baseline)
     const auto& ink = inkFor (currentText());
     const float x = box.getX() + 1.0f + (box.getWidth() - 2.0f - ink.width) * 0.5f - ink.left;
-    const float baseline = box.getY() + 1.0f + pad + ink.capHeight;
+    const float baseline = box.getY() + 1.0f + pd + ink.capHeight;
     const auto at = juce::AffineTransform::translation (x, baseline);
     // numero: Plex Mono Medium bianco; unità: Plex Mono Regular grigia, 1 px più piccola
     g.setColour (! en ? frame : (dragging ? accentOf (*this) : (hover == Zone::Number ? juce::Colours::white : valueText)));
@@ -358,7 +354,7 @@ void ValueBox::mouseExit (const juce::MouseEvent&) { hover = Zone::None; repaint
 juce::Rectangle<int> ValueBox::boxArea() const
 {
     const int side = kArrowW + arrowGap();
-    return { side, (getHeight() - kControlH) / 2, getWidth() - 2 * side, kControlH };
+    return { side, (getHeight() - scale.height) / 2, getWidth() - 2 * side, scale.height };
 }
 
 void ValueBox::mouseDoubleClick (const juce::MouseEvent& e)
@@ -381,6 +377,7 @@ void ValueBox::mouseDoubleClick (const juce::MouseEvent& e)
         setValue (parse ? parse (t) : InlineEditor::parseNumber (t));
         param->endChangeGesture();
     };
+    editor.setFont (face (Face::MonoMedium, scale.value));
     editor.start (*this, boxArea().reduced (1), txt.trim());
 }
 
@@ -439,7 +436,7 @@ float BigValue::widestInk() const
 
 int BigValue::getIdealWidth() const
 {
-    const float lw = juce::GlyphArrangement::getStringWidth (face (Face::SansMedium, kLabelSize), label);
+    const float lw = juce::GlyphArrangement::getStringWidth (face (Face::SansMedium, kLabelSz), label);
     return (int) std::ceil (juce::jmax (lw, widestInk() + 2.0f * 20.0f));   // 20 px d'aria ai lati del numero più largo
 }
 
@@ -455,7 +452,7 @@ void BigValue::paint (juce::Graphics& g)
     const bool en = isEnabled();
     const auto col = accentOf (*this);
     const float cx = (float) getWidth() * 0.5f;
-    drawAtBaseline (g, label, cx, std::round (capHeight (kLabelSize, Face::SansMedium)) + 2.0f, en ? labelStatic : frame, kLabelSize,
+    drawAtBaseline (g, label, cx, std::round (capHeight (kLabelSz, Face::SansMedium)) + 2.0f, en ? labelStatic : frame, kLabelSz,
                     juce::Justification::horizontallyCentred, Face::SansMedium);
     // riquadro fisso: riempimento grigio dal minimo al valore, bordo da 1 px, il bordo inferiore colorato fino al valore
     const auto box = boxArea();
@@ -538,7 +535,7 @@ void BigValue::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDe
 // ============================================================================ TextToggle
 int TextToggle::getIdealWidth() const
 {
-    return (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, kControlTextSize), text)) + 24;
+    return (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, textSize), text)) + 24;
 }
 
 void TextToggle::paint (juce::Graphics& g)
@@ -547,7 +544,7 @@ void TextToggle::paint (juce::Graphics& g)
     const bool on = isOn(), en = isEnabled();
     if (on && en) { g.setColour (accentOf (*this)); g.fillRect (r); }
     else { g.setColour (! en ? frame : (isMouseOver() ? labelHover : ui::text)); outline (g, r); }
-    drawLabel (g, text, getLocalBounds(), on && en ? onAccent : (! en ? frame : (isMouseOver() ? labelHover : selector)), kControlTextSize,
+    drawLabel (g, text, getLocalBounds(), on && en ? onAccent : (! en ? frame : (isMouseOver() ? labelHover : selector)), textSize,
                juce::Justification::centred, on ? Face::SansSemiBold : Face::SansRegular);
 }
 
@@ -575,7 +572,7 @@ void Section::add (const juce::String& rowLabel, juce::Component& c, int width)
 int Section::labelWidth() const
 {
     int w = 0;
-    for (auto& r : rows) w = juce::jmax (w, (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansMedium, kLabelSize), r.label)));
+    for (auto& r : rows) w = juce::jmax (w, (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansMedium, scale.label), r.label)));
     return w;
 }
 
@@ -585,11 +582,11 @@ int Section::getIdealWidth() const
     for (auto& r : rows) ctl = juce::jmax (ctl, r.width);
     const int lw = labelWidth();
     const int titleW = (onParam != nullptr ? kBoxSize + kGapLabel : 0)
-                     + (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, kControlTextSize), title));
+                     + (int) std::ceil (juce::GlyphArrangement::getStringWidth (face (Face::SansSemiBold, scale.title), title));
     return juce::jmax (titleW, (lw > 0 ? lw + kGapLabel : 0) + ctl);
 }
 
-int Section::getIdealHeight() const { return kTitleH + (int) rows.size() * (kControlH + kRowGap); }
+int Section::getIdealHeight() const { return kTitleH + (int) rows.size() * (scale.height + kRowGap); }
 
 void Section::resized()
 {
@@ -598,8 +595,8 @@ void Section::resized()
     int y = kTitleH + 4;
     for (auto& r : rows)
     {
-        r.comp->setBounds (lw > 0 ? lw + kGapLabel : 0, y, r.width, kControlH);
-        y += kControlH + kRowGap;
+        r.comp->setBounds (lw > 0 ? lw + kGapLabel : 0, y, r.width, scale.height);
+        y += scale.height + kRowGap;
     }
 }
 
@@ -618,14 +615,14 @@ void Section::paint (juce::Graphics& g)
     const bool on = isOn();
     const float tx = onParam != nullptr ? (float) (kBoxSize + kGapLabel) : 0.0f;
     // titolo del gruppo: più chiaro e più marcato delle etichette, grigio scuro quando il gruppo è spento
-    drawAtBaseline (g, title, tx, (float) kTitleH / 2.0f - 2.0f + capHeight (kControlTextSize, Face::SansSemiBold) * 0.5f,
-                    on ? titleName : labelStatic, kControlTextSize, juce::Justification::left, Face::SansSemiBold);
+    drawAtBaseline (g, title, tx, (float) kTitleH / 2.0f - 2.0f + capHeight (scale.title, Face::SansSemiBold) * 0.5f,
+                    on ? titleName : labelStatic, scale.title, juce::Justification::left, Face::SansSemiBold);
     int y = kTitleH + 4;
     for (auto& r : rows)
     {
         if (r.label.isNotEmpty())
-            drawLabel (g, r.label, { 0, y, labelWidth(), kControlH }, on ? labelStatic : frame, kLabelSize);
-        y += kControlH + kRowGap;
+            drawLabel (g, r.label, { 0, y, labelWidth(), scale.height }, on ? labelStatic : frame, scale.label);
+        y += scale.height + kRowGap;
     }
 }
 
@@ -658,7 +655,34 @@ void AboutOverlay::mouseDown (const juce::MouseEvent& e)
 {
     if (! downloadArea.isEmpty() && downloadArea.contains (e.getPosition()) && update.url.startsWith ("https://"))
         juce::URL (update.url).launchInDefaultBrowser();
+    if (! checkArea.isEmpty() && checkArea.contains (e.getPosition())) { checkNow(); return; }   // il pannello resta aperto
     setVisible (false);
+}
+
+void AboutOverlay::checkNow()
+{
+    if (manual == Manual::checking) return;
+    if (manualCheck == nullptr)
+        manualCheck = std::make_unique<updates::ManualCheck> (*this, product(), [this] (const updates::Available& a)
+        {
+            if (a.version.isNotEmpty()) { manual = Manual::idle; setUpdate (a); }
+            else manual = a.reached ? Manual::latest : Manual::failed;
+            repaint();
+        });
+    if (manualCheck->start()) manual = Manual::checking;
+    repaint();
+}
+
+juce::String AboutOverlay::checkStatusForTest() const
+{
+    switch (manual)
+    {
+        case Manual::idle:     return "idle";
+        case Manual::checking: return "checking";
+        case Manual::latest:   return "latest";
+        case Manual::failed:   return "failed";
+    }
+    return {};
 }
 
 // quadratino di aggiornamento: in alto a destra del logotipo, all'altezza delle maiuscole
@@ -744,7 +768,7 @@ void AboutOverlay::paint (juce::Graphics& g)
     body.append (text, face (Face::SansRegular, 15.0f), labelHover);
     juce::TextLayout tl; tl.createLayout (body, w);
     const bool hasUpdate = update.version.isNotEmpty();
-    const float blockH = 48.0f + tl.getHeight() + 34.0f + 70.0f + (hasUpdate ? 52.0f : 0.0f);
+    const float blockH = 48.0f + tl.getHeight() + 34.0f + 70.0f + 52.0f;
     float y = juce::jmax (24.0f, ((float) getHeight() - blockH) * 0.5f);
     drawTitleAlways (g, name, juce::Rectangle<float> (x - 1.0f, y, w, 36.0f).toNearestInt(), kLogoSize, col);
     y += 48.0f;
@@ -767,6 +791,24 @@ void AboutOverlay::paint (juce::Graphics& g)
     if (const auto v = updates::versionLabel (updates::currentVersion()); v.isNotEmpty())
         drawAtBaseline (g, "version " + v, x + w, y, info, kInfoSize, juce::Justification::right, Face::MonoRegular);
     downloadArea = {};
+    checkArea = {};
+    if (! hasUpdate)
+    {
+        // "check for updates": un tasto a contorno; a sinistra cosa ha risposto GitHub
+        y += 34.0f;
+        const auto bf = face (Face::SansSemiBold, kControlTextSize);
+        const juce::String cap = manual == Manual::checking ? "checking..." : "check for updates";
+        const int bw = (int) std::ceil (juce::GlyphArrangement::getStringWidth (bf, "check for updates")) + 24;
+        checkArea = { juce::roundToInt (x + w) - bw, juce::roundToInt (y - capHeight (kControlTextSize, Face::SansSemiBold) * 0.5f) - kControlH / 2, bw, kControlH };
+        const bool hot = checkArea.contains (getMouseXYRelative()) && manual != Manual::checking;
+        g.setColour (hot ? labelHover : ui::text); outline (g, checkArea.toFloat());
+        drawLabel (g, cap, checkArea, manual == Manual::checking ? info : (hot ? labelHover : selector), kControlTextSize, juce::Justification::centred, Face::SansSemiBold);
+        const juce::String msg = manual == Manual::latest ? "you have the latest version"
+                               : manual == Manual::failed ? "could not reach GitHub, try again later" : "";
+        if (msg.isNotEmpty())
+            drawAtBaseline (g, msg, x, baselineFor ((float) checkArea.getCentreY(), kInfoSize, Face::SansMedium), manual == Manual::failed ? info : labelHover,
+                            kInfoSize, juce::Justification::left, Face::SansMedium);
+    }
     if (hasUpdate)
     {
         // nuova versione: testo nel colore del plugin e un tasto pieno che apre la pagina della release

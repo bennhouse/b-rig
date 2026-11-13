@@ -3,7 +3,8 @@
 #   tools/release.sh 0.2.0
 # Sul Mac, in locale: scrive la versione in VERSION.txt, compila app e plugin (Apple Silicon), lancia tutti i test e
 # crea l'installer (tools/installer/make-pkg.sh) dentro un'immagine disco con l'icona (make-dmg.sh). Se tutto passa
-# fa il commit, crea il tag b-rig-v<versione>, fa il push e pubblica la release come "Latest" (durante la beta il
+# fa il commit, crea il tag b-rig-v<versione>, fa il push e pubblica la release come "Latest", con le note di
+# tools/installer/notes-b-rig.md e la sezione della versione in CHANGELOG.md (durante la beta il
 # titolo dice "beta": le pre-release GitHub non le mostra nella pagina del repository).
 # App e plugin già installati la vedono con il controllo aggiornamenti (shared/smp/Updates.h).
 set -euo pipefail
@@ -52,5 +53,10 @@ git add VERSION.txt
 git diff --cached --quiet || git commit -m "b-rig $version"
 git tag -a "$tag" -m "b-rig $version"
 git push origin HEAD "$tag"
-"$gh" release create "$tag" "$dmg" --title "b-rig $version beta" --latest --notes-file tools/installer/notes-b-rig.md
+# note: come installare, poi la sezione "## <versione>" di CHANGELOG.md
+notes="$(mktemp)"
+{ cat tools/installer/notes-b-rig.md; echo; echo "## What's new in $version"; echo
+  awk -v v="## $version" 'index($0, v) == 1 { on = 1; next } on && /^## / { exit } on' CHANGELOG.md; } > "$notes"
+"$gh" release create "$tag" "$dmg" --title "b-rig $version beta" --latest --notes-file "$notes"
+rm -f "$notes"
 echo "pubblicato $tag con $dmg"

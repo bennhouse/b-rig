@@ -651,7 +651,7 @@ void BAftercabProcessor::processCompressor (juce::AudioBuffer<float>& buffer, in
     // misura della riduzione reale: energia prima del comp (questo blocco)
     const int cmode = juce::jlimit (0, 2, (int) pCompMode->load()); const float thr = pCompThr->load();
     if (cmode != compMeasMode || std::abs (thr - compMeasThr) > 0.05f)
-    { compMeasMode = cmode; compMeasThr = thr; compInAcc = compOutAcc = 0.0; compMeasSamples = 0; compMeasValid.store (false); }
+    { compMeasMode = cmode; compMeasThr = thr; compInAcc = compOutAcc = 0.0; compMeasSamples = 0; compMeasValid.store (false); compLatched = false; }
     double eIn = 0.0;
     for (int c = 0; c < numChannels; ++c) { const float* x = buffer.getReadPointer (c); for (int i = 0; i < total; ++i) eIn += (double) x[i] * x[i]; }
     for (int start = 0; start < total; start += chunk)
@@ -662,18 +662,20 @@ void BAftercabProcessor::processCompressor (juce::AudioBuffer<float>& buffer, in
                             numChannels > 1 ? buffer.getWritePointer (1) + start : nullptr };
         maxGr = juce::jmax (maxGr, compressor.process (chans, numChannels, n, compGateBuf.data()));
     }
-    if (want && ! compGate.isSmoothing() && eIn > (double) (total * numChannels) * 3.16e-6)   // sopra -55 dBFS rms
+    // la misura dura 1 s di suono dopo il cambio (tipo, soglia o la prima accensione), poi resta ferma: se l'utente non
+    // cambia nulla, l'OUT auto non si muove più, qualunque cosa arrivi in ingresso
+    if (want && ! compLatched && ! compGate.isSmoothing() && eIn > (double) (total * numChannels) * 3.16e-6)   // sopra -55 dBFS rms
     {
         double eOut = 0.0;
         for (int c = 0; c < numChannels; ++c) { const float* x = buffer.getReadPointer (c); for (int i = 0; i < total; ++i) eOut += (double) x[i] * x[i]; }
-        const double a = std::exp (-(double) total / (2.0 * currentSampleRate));   // finestra ~2 s
-        compInAcc = a * compInAcc + eIn; compOutAcc = a * compOutAcc + eOut;
+        compInAcc += eIn; compOutAcc += eOut;
         compMeasSamples += total;
         if (compMeasSamples > (int) (0.15 * currentSampleRate) && compOutAcc > 1.0e-12)
         {
             compMeasDb.store ((float) (10.0 * std::log10 (compInAcc / compOutAcc)));
             compMeasValid.store (true);
         }
+        if (compMeasSamples >= (int) currentSampleRate && compMeasValid.load()) compLatched = true;
     }
     for (float prev = compGrPeak.load(); maxGr > prev && ! compGrPeak.compare_exchange_weak (prev, maxGr);) {}
 

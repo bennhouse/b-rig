@@ -161,11 +161,13 @@ private:
     std::atomic<float>* pOutGain = nullptr;
     std::atomic<float>* pOutAuto = nullptr;
     std::atomic<float> autoOutDb { 0.0f };
-    // compressore: riduzione media REALE misurata sul segnale che passa (energia in / out, finestra ~2 s, solo con
-    // segnale sopra -55 dBFS). L'OUT auto usa questa misura appena è valida (0,4 s di musica dopo l'ultimo cambio
-    // di tipo o soglia); prima usa la stima statica. Così il volume resta uguale a qualunque livello d'ingresso.
+    // compressore: quanto toglie, misurato sul segnale che passa (energia in / out, solo sopra -55 dBFS) nel primo
+    // secondo di suono dopo un cambio di tipo o soglia (o la prima accensione); poi la misura si ferma. L'OUT auto la
+    // usa appena è valida (0,15 s) e da lì non cambia più finché l'utente non tocca un parametro: compensa i cambi
+    // fatti dall'utente, non segue il livello d'ingresso.
     std::atomic<float> compMeasDb { 0.0f }; std::atomic<bool> compMeasValid { false };
     double compInAcc = 0.0, compOutAcc = 0.0; int compMeasSamples = 0, compMeasMode = -1; float compMeasThr = 1.0e9f;
+    bool compLatched = false;
     // guadagno d'uscita: in automatico SALE piano (350 ms) e SCENDE in fretta (30 ms): accendendo il comp o
     // cambiando l'EQ il volume non fa mai un picco; a mano segue in 50 ms
     float outG = 1.0f, outUp = 0.0f, outDown = 0.0f, outManual = 0.0f;

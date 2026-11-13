@@ -15,7 +15,8 @@ void VerbGraph::paint (juce::Graphics& g)
     const auto all = getLocalBounds().toFloat();
     // a destra i due livelli dal vivo (IN, WET), fuori dall'asse dei tempi: non si confondono con l'inviluppo
     constexpr float kMeterW = 46.0f;
-    auto plot = all.withTrimmedLeft (34.0f).withTrimmedBottom (18.0f).withTrimmedTop (8.0f).withTrimmedRight (kMeterW + 12.0f);
+    // in alto una fascia libera per il predelay (sopra il grafico non si sovrappone alle linee)
+    auto plot = all.withTrimmedLeft (34.0f).withTrimmedBottom (18.0f).withTrimmedTop (24.0f).withTrimmedRight (kMeterW + 12.0f);
     const auto meters = juce::Rectangle<float> (plot.getRight() + 12.0f, plot.getY(), kMeterW, plot.getHeight());
     // asse dei tempi: abbastanza per vedere tutta la coda (fino a 21 s)
     const float tMax = juce::jlimit (0.25f, 21.0f, (pre + (freeze ? 2.0f : decay)) * 1.15f);
@@ -28,6 +29,7 @@ void VerbGraph::paint (juce::Graphics& g)
         g.setColour (juce::exactlyEqual (db, 0.0f) ? gridZero : gridLine);
         g.fillRect (plot.getX(), std::round (yOf (db)), plot.getWidth(), kLine);
         drawAtBaseline (g, juce::String ((int) db), plot.getX() - 6.0f, yOf (db) + 4.0f, info, kAxisSize, juce::Justification::right);
+        if (juce::exactlyEqual (db, 0.0f)) drawAtBaseline (g, "dB", plot.getX() - 6.0f, plot.getY() - 9.0f, info, kAxisSmall, juce::Justification::right);
     }
     float step = 0.05f;
     for (float c : { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 5.0f }) if (tMax / step > 8.0f) step = c;
@@ -46,7 +48,19 @@ void VerbGraph::paint (juce::Graphics& g)
     g.setColour (gridLine);
     outline (g, plot);
 
+    // predelay: sopra il grafico, una staffa da 0 all'inizio del riverbero
+    if (pre > 0.0005f)
+    {
+        const float x0 = xOf (0.0f), x1 = xOf (pre), y = plot.getY() - 12.0f;
+        g.setColour (accent.withAlpha (0.7f));
+        g.fillRect (x0, std::round (y), juce::jmax (1.0f, x1 - x0), kLine);
+        g.fillRect (std::round (x0), y - 3.0f, kLine, 7.0f);
+        g.fillRect (std::round (x1), y - 3.0f, kLine, 7.0f);
+        drawValueTag (g, "predelay " + num (pre * 1000.0f, 1) + " ms", x1 + 8.0f, y + 4.0f);
+    }
+
     // prime riflessioni: pali verticali (spostati dal predelay, alti quanto "early")
+    float earlyRight = 0.0f;
     for (int k = 0; k < BVerbProcessor::kTaps; ++k)
     {
         const float t = pre + BVerbProcessor::tapTimeMs (type, size, k, false) / 1000.0f;
@@ -55,9 +69,12 @@ void VerbGraph::paint (juce::Graphics& g)
         const float y = yOf (20.0f * std::log10 (lvl));
         g.setColour (accent.withAlpha (0.8f));
         g.fillRect (std::round (xOf (t)) - 1.0f, y, 2.0f, plot.getBottom() - y);
+        earlyRight = juce::jmax (earlyRight, xOf (t));
     }
-    // inviluppo del decadimento: il corpo come area piena e linea, le alte (8 kHz) come linea sottile; i tempi
-    // vengono dalla stessa formula del loop (BVerbProcessor::rt60At)
+    if (earlyRight > 0.0f) drawTag (g, "early", earlyRight + 8.0f, plot.getBottom() - 8.0f);
+
+    // inviluppo del decadimento: il corpo (500 Hz) come area piena e linea, le alte (8 kHz) come linea sottile; i tempi
+    // vengono dalla stessa formula del loop (BVerbProcessor::rt60At). Alla fine di ogni linea il suo tempo a -60 dB.
     const float start = pre + 0.004f;
     if (freeze)
     {
@@ -66,7 +83,7 @@ void VerbGraph::paint (juce::Graphics& g)
         g.setColour (accent.withAlpha (0.10f)); g.fillPath (body);
         g.setColour (accent);
         g.fillRect (xOf (start), std::round (yOf (-3.0f)), plot.getRight() - xOf (start), 1.5f);
-        drawTag (g, "freeze", plot.getRight() - 8.0f, yOf (-3.0f) - 6.0f, juce::Justification::right);
+        drawTag (g, "freeze: the tail holds", plot.getRight() - 8.0f, yOf (-3.0f) - 6.0f, juce::Justification::right);
     }
     else
     {
@@ -82,7 +99,16 @@ void VerbGraph::paint (juce::Graphics& g)
         g.drawLine (xOf (start), yOf (0.0f), xOf (start + rtHi), yOf (-60.0f), 1.0f);
         g.setColour (accent);
         g.drawLine (xOf (start), yOf (0.0f), xOf (start + rtLo), yOf (-60.0f), 1.5f);
-        drawValueTag (g, "8 kHz " + num (rtHi, 2) + " s", xOf (start + rtHi * 0.5f) + 6.0f, yOf (-30.0f) - 4.0f);
+        // il tempo di ogni linea subito dopo il punto in cui arriva a -60 dB, appena sopra il fondo: lì non passa
+        // nessuna linea. Le alte un rigo più su se finiscono vicino al corpo.
+        const float xLo = xOf (start + rtLo), xHi = xOf (start + rtHi), base = plot.getBottom() - 8.0f;
+        const juce::String lo = "body " + num (rtLo, 2) + " s", hi = "highs 8 kHz " + num (rtHi, 2) + " s";
+        const float loW = juce::GlyphArrangement::getStringWidth (face (Face::MonoRegular, kAxisSize), lo);
+        const float hiW = juce::GlyphArrangement::getStringWidth (face (Face::MonoRegular, kAxisSize), hi);
+        if (xLo + 8.0f + loW < plot.getRight() - 4.0f) drawValueTag (g, lo, xLo + 8.0f, base);
+        else drawValueTag (g, lo, plot.getRight() - 6.0f, base - 16.0f, juce::Justification::right);
+        const float hx = juce::jmax (xHi + 8.0f, earlyRight + 70.0f);
+        drawValueTag (g, hi, hx, hx + hiW + 12.0f > xLo ? base - 16.0f : base);
     }
 
     // livelli dal vivo: picco degli ultimi ~20 ms, ingresso grigio e wet nel colore del plugin
@@ -146,6 +172,7 @@ namespace
         b.step = std::move (st);
         b.drag = [p] (float, float startNorm, float dx) { return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, startNorm + dx * 0.003f)); };
         b.sizeSamples = std::move (sizes);
+        b.setScale (ui::kRoomy);   // numeri ed etichette un poco più grandi, in equilibrio con i valori grandi
     }
     void setupBig (ui::BigValue& b, const juce::String& label, juce::RangedAudioParameter* p, std::function<juce::String (float)> f,
                    std::function<float (float, int)> st)
@@ -178,6 +205,7 @@ BVerbEditor::BVerbEditor (BVerbProcessor& p)
     setupBig (mix, "mix", prm (BVerbIDs::mix), pct, stepPct);
     for (auto* b : { &size, &decay, &predelay, &mix }) addAndMakeVisible (*b);
     freeze.bindTo (*prm (BVerbIDs::freeze));
+    freeze.textSize = kRoomy.title;
     addAndMakeVisible (freeze);
 
     // 3. i gruppi
@@ -198,7 +226,7 @@ BVerbEditor::BVerbEditor (BVerbProcessor& p)
     duckSec.add ("amount", duck, duck.getIdealWidth());
     outSec.add ("width", width, width.getIdealWidth());
     outSec.add ("output", output, output.getIdealWidth());
-    for (auto* sec : sections) { addAndMakeVisible (*sec); sec->refresh(); }
+    for (auto* sec : sections) { sec->setScale (kRoomy); addAndMakeVisible (*sec); sec->refresh(); }
     addAndMakeVisible (graph);
     resized();
 }

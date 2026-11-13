@@ -4,7 +4,7 @@
 namespace
 {
     constexpr float kC = 343.0f;   // velocità del suono, m/s
-    constexpr const char* kIds[13] = { BSpaceIDs::space, BSpaceIDs::walls, BSpaceIDs::source, BSpaceIDs::distComp, BSpaceIDs::width, BSpaceIDs::depth,
+    constexpr const char* kIds[13] = { BSpaceIDs::room, BSpaceIDs::mix, BSpaceIDs::source, BSpaceIDs::distComp, BSpaceIDs::width, BSpaceIDs::depth,
                                        BSpaceIDs::ceiling, BSpaceIDs::angle, BSpaceIDs::air, BSpaceIDs::srcX, BSpaceIDs::srcY, BSpaceIDs::lisX, BSpaceIDs::lisY };
     constexpr float kLineRatio[4] = { 0.713f, 0.907f, 1.093f, 1.289f };   // rapporti tra le 4 linee (lunghezze prime tra loro)
 }
@@ -22,8 +22,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout BSpaceProcessor::createLayou
 {
     using namespace juce;
     AudioProcessorValueTreeState::ParameterLayout l;
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { BSpaceIDs::space, 1 }, "Space", StringArray { "Studio", "Garage", "Club", "Hall" }, 0));
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { BSpaceIDs::walls, 1 }, "Walls", StringArray { "Treated", "Wood", "Brick", "Concrete" }, 1));
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { BSpaceIDs::room, 1 }, "Room", StringArray { "Studio", "Live room", "Garage", "Club", "Hall", "Church" }, 0));
+    l.add (std::make_unique<AudioParameterFloat> (ParameterID { BSpaceIDs::mix, 1 }, "Mix", NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f,
+        AudioParameterFloatAttributes().withLabel ("%")));
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { BSpaceIDs::source, 1 }, "Source", StringArray { "Cab 4x12", "Combo", "Omni" }, 0));
     l.add (std::make_unique<AudioParameterBool> (ParameterID { BSpaceIDs::distComp, 1 }, "Distance compensation", true));
     auto metres = [] (float lo, float hi, float def, const char* name, const char* id)
@@ -55,9 +56,9 @@ bool BSpaceProcessor::isBusesLayoutSupported (const BusesLayout& l) const
     return (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo()) && out == juce::AudioChannelSet::stereo();
 }
 
-void BSpaceProcessor::applySpace (int s)
+void BSpaceProcessor::applyRoom (int s)
 {
-    const auto& r = kRooms[juce::jlimit (0, 3, s)];
+    const auto& r = kRooms[juce::jlimit (0, kNumRooms - 1, s)];
     for (auto [id, v] : { std::pair<const char*, float> { BSpaceIDs::width, r.w }, { BSpaceIDs::depth, r.d }, { BSpaceIDs::ceiling, r.h } })
     {
         auto* p = apvts.getParameter (id);
@@ -70,7 +71,7 @@ BSpaceProcessor::Params BSpaceProcessor::currentParams() const
     Params p;
     p.w = raw[4]->load(); p.d = raw[5]->load(); p.h = raw[6]->load(); p.angleDeg = raw[7]->load(); p.air = raw[8]->load() / 100.0f;
     p.sx = raw[9]->load(); p.sy = raw[10]->load(); p.lx = raw[11]->load(); p.ly = raw[12]->load();
-    p.walls = juce::jlimit (0, 3, (int) raw[1]->load()); p.source = juce::jlimit (0, 2, (int) raw[2]->load());
+    p.room = juce::jlimit (0, kNumRooms - 1, (int) raw[0]->load()); p.source = juce::jlimit (0, 2, (int) raw[2]->load());
     p.distComp = raw[3]->load() > 0.5f;
     return p;
 }
@@ -89,16 +90,17 @@ BSpaceProcessor::Geometry BSpaceProcessor::geometry (const Params& p)
     const float ang = juce::degreesToRadians (p.angleDeg);
     const P facing { toward.x * std::cos (ang) - toward.y * std::sin (ang), toward.x * std::sin (ang) + toward.y * std::cos (ang) };
     constexpr float kTop[3] = { 12000.0f, 10000.0f, 16000.0f }, kDir[3] = { 1.0f, 0.7f, 0.0f };
-    const float dz = kEarHeight - kSourceHeight, dzCeil = 2.0f * p.h - kEarHeight - kSourceHeight;
+    const float dz = kEarHeight - kSourceHeight, dzCeil = 2.0f * p.h - kEarHeight - kSourceHeight, dzFloor = kEarHeight + kSourceHeight;
+    const auto& room = kRooms[juce::jlimit (0, kNumRooms - 1, p.room)];
 
     float d0 = 1.0f;
     for (int k = 0; k < kTaps; ++k)
     {
         auto& path = g.paths[(size_t) k];
-        const int img = k == 5 ? 0 : k;
+        const int img = k >= 5 ? 0 : k;   // soffitto e pavimento: stessa posizione in pianta, cambia l'altezza
         const P v = imgS[img] - L;
         const float horiz = v.getDistanceFromOrigin();
-        const float vert = k == 5 ? dzCeil : dz;
+        const float vert = k == 5 ? dzCeil : k == 6 ? dzFloor : dz;
         path.dist = juce::jmax (0.3f, std::sqrt (horiz * horiz + vert * vert));
         if (k == 0) d0 = path.dist;
         path.azimuth = horiz > 1.0e-3f ? std::atan2 (v.x, -v.y) : 0.0f;
@@ -110,7 +112,9 @@ BSpaceProcessor::Geometry BSpaceProcessor::geometry (const Params& p)
         const float t = std::pow (path.offAxisDeg / 180.0f, 0.8f) * kDir[p.source];
         const float fcDir = kTop[p.source] * std::pow (1800.0f / 12000.0f, t);
         const float fcAir = 20000.0f / (1.0f + p.air * path.dist / 8.0f);
-        path.cutoffHz = juce::jmin (fcDir, fcAir);
+        // il materiale: ogni rimbalzo perde le alte sopra la frequenza della superficie che lo rimanda
+        const float fcMat = k == 0 ? 20000.0f : k == 6 ? room.floorHz : room.wallHz;
+        path.cutoffHz = juce::jmin (fcDir, fcAir, fcMat);
         // punto di rimbalzo: dove la linea immagine -> ascoltatore attraversa la parete
         path.bounce = S;
         if (k >= 1 && k <= 4)
@@ -127,16 +131,21 @@ BSpaceProcessor::Geometry BSpaceProcessor::geometry (const Params& p)
     for (int k = 0; k < kTaps; ++k)
     {
         auto& path = g.paths[(size_t) k];
-        path.gain = k == 0 ? 1.0f : d0 / juce::jmax (0.5f, path.dist) * kWallReflect[p.walls];
+        path.gain = k == 0 ? 1.0f : d0 / juce::jmax (0.5f, path.dist) * (k == 6 ? room.floorReflect : room.reflect);
         path.delayS = (p.distComp ? path.dist - d0 : path.dist) / kC;
     }
     // coda: Sabine e distanza critica
     const float V = p.w * p.d * p.h, Sa = 2.0f * (p.w * p.d + p.w * p.h + p.d * p.h);
     g.mfp = 4.0f * V / Sa;
-    g.rt60 = juce::jlimit (0.12f, 4.0f, 0.161f * V / (Sa * kWallAbsorb[p.walls]) * (1.0f - 0.25f * p.air));
+    g.rt60 = juce::jlimit (0.12f, 4.0f, 0.161f * V / (Sa * room.absorb) * (1.0f - 0.25f * p.air));
     const float rc = 0.057f * std::sqrt (V / g.rt60);
     g.tailGain = juce::jlimit (0.03f, 1.2f, 0.7f * d0 / rc);
-    g.wallDampHz = kWallDampHz[p.walls] * (1.0f - 0.4f * p.air);
+    g.wallDampHz = room.wallHz * (1.0f - 0.4f * p.air);
+    // ampli vicino a una parete: sotto i 160 Hz la parete rimanda l'onda quasi in fase e i bassi crescono
+    // (fino a circa +6 dB contro una parete dura, di più in un angolo); oltre un metro l'effetto sparisce
+    float boost = 0.0f;
+    for (float dw : { S.x, p.w - S.x, S.y, p.d - S.y }) boost += std::exp (-juce::jmax (0.0f, dw) / 0.6f);
+    g.bassBoost = juce::jlimit (0.0f, 1.5f, 0.75f * room.reflect * boost);
     return g;
 }
 
@@ -149,6 +158,7 @@ void BSpaceProcessor::prepareToPlay (double sampleRate, int)
     for (auto& t : ears) for (auto& e : t) e.z = 0.0f;
     damp.fill (0.0f);
     smooth = 1.0f - std::exp (-1.0f / (0.03f * (float) fs));
+    bassA = std::exp (-juce::MathConstants<float>::twoPi * kBassHz / (float) fs); bassZ = 0.0f; tailZ = 0.0f;
     first = true; lastSig = 0; ctl = 0;
 }
 
@@ -185,10 +195,12 @@ void BSpaceProcessor::recompute() noexcept
     tDampA = std::exp (-twoPiOverFs * g.wallDampHz);
     tSend = g.tailGain * std::sqrt (juce::jmax (0.01f, 1.0f - gAvg * gAvg));
     tNorm = 1.0f / std::sqrt (1.0f + 0.5f * (energy + g.tailGain * g.tailGain));
+    tBass = g.bassBoost;
     if (first)
     {
         for (auto& t : ears) for (auto& e : t) { e.delay = e.tDelay; e.gain = e.tGain; e.lpA = e.tLpA; }
-        lineLen = tLineLen; lineG = tLineG; dampA = tDampA; send = tSend; norm = tNorm;
+        lineLen = tLineLen; lineG = tLineG; dampA = tDampA; send = tSend; norm = tNorm; bass = tBass;
+        mixG = raw[1]->load() / 100.0f;
         first = false;
     }
 }
@@ -213,7 +225,11 @@ void BSpaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             for (auto* r : raw) sig = sig * 31 + (juce::int64) (r->load() * 1000.0f);
             if (sig != lastSig || first) { lastSig = sig; recompute(); }
         }
-        const float x = inCh > 1 ? 0.5f * (L[i] + R[i]) : L[i];
+        const float dry = inCh > 1 ? 0.5f * (L[i] + R[i]) : L[i];
+        // rinforzo dei bassi delle pareti vicine: sulla sorgente, quindi in tutti i percorsi
+        bass += a * (tBass - bass);
+        bassZ = dry + bassA * (bassZ - dry);
+        const float x = dry + bass * bassZ;
         buf[(size_t) w] = x;
 
         float out[2] = { 0.0f, 0.0f };
@@ -246,7 +262,10 @@ void BSpaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             rd[k] = s0 + f * (s1 - s0);
             damp[k] = rd[k] + dampA * (damp[k] - rd[k]);
         }
-        const float u = send * 0.5f * (out[0] + out[1]);
+        // la coda prende il suono già filtrato dai materiali (in una stanza trattata la coda è scura, nel cemento brillante)
+        const float uIn = send * 0.5f * (out[0] + out[1]);
+        tailZ = uIn + dampA * (tailZ - uIn);
+        const float u = tailZ;
         const float d0 = damp[0] * lineG[0], d1 = damp[1] * lineG[1], d2 = damp[2] * lineG[2], d3 = damp[3] * lineG[3];
         lines[0][(size_t) lw] = 0.5f * (d0 + d1 + d2 + d3) + u;
         lines[1][(size_t) lw] = 0.5f * (d0 - d1 + d2 - d3) + u;
@@ -255,8 +274,10 @@ void BSpaceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         lw = (lw + 1) & (kLine - 1);
         w = (w + 1) & (kBuf - 1);
 
-        L[i] = norm * (out[0] + 0.7f * (rd[0] + rd[2]));
-        R[i] = norm * (out[1] + 0.7f * (rd[1] + rd[3]));
+        // mix: 0 = il segnale che entra, 100 = solo la stanza (diretto compreso)
+        mixG += a * (raw[1]->load (std::memory_order_relaxed) * 0.01f - mixG);
+        L[i] = dry + mixG * (norm * (out[0] + 0.7f * (damp[0] + damp[2])) - dry);
+        R[i] = dry + mixG * (norm * (out[1] + 0.7f * (damp[1] + damp[3])) - dry);
         peak = juce::jmax (peak, std::abs (L[i]), std::abs (R[i]));
     }
     for (auto& t : ears) for (auto& e : t) if (std::abs (e.z) < 1.0e-20f) e.z = 0.0f;
@@ -270,8 +291,22 @@ void BSpaceProcessor::getStateInformation (juce::MemoryBlock& d)
 
 void BSpaceProcessor::setStateInformation (const void* data, int size)
 {
-    if (auto xml = getXmlFromBinary (data, size))
-        if (xml->hasTagName (apvts.state.getType())) apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    auto xml = getXmlFromBinary (data, size);
+    if (xml == nullptr || ! xml->hasTagName (apvts.state.getType())) return;
+    auto t = juce::ValueTree::fromXml (*xml);
+    // progetti di prima: "space" (studio, garage, club, hall) diventa la stanza; i materiali ora seguono la stanza
+    const auto oldSpace = t.getChildWithProperty ("id", "space");
+    if (oldSpace.isValid() && ! t.getChildWithProperty ("id", BSpaceIDs::room).isValid())
+    {
+        constexpr int kMap[4] = { 0, 2, 3, 4 };
+        juce::ValueTree r ("PARAM");
+        r.setProperty ("id", BSpaceIDs::room, nullptr);
+        r.setProperty ("value", kMap[juce::jlimit (0, 3, (int) (float) oldSpace["value"])], nullptr);
+        t.appendChild (r, nullptr);
+    }
+    for (const char* gone : { "space", "walls" })
+        if (auto c = t.getChildWithProperty ("id", gone); c.isValid()) t.removeChild (c, nullptr);
+    apvts.replaceState (t);
 }
 
 juce::AudioProcessorEditor* BSpaceProcessor::createEditor() { return new BSpaceEditor (*this); }

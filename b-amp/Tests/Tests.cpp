@@ -1,5 +1,6 @@
 // Test di b-amp: livelli dei canali, gate (rumore chiuso, nota passa, stop rapido), tone stack, tuner MPM,
-// level auto, cambio canale senza click, CPU, larghezze fisse e snapshot (3 canali + tuner).
+// cambio canale senza click, tone del boost, oversampling spento, controlli per testata salvati col progetto,
+// CPU, larghezze fisse e snapshot (3 canali + tuner).
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "smp/TestKit.h"
@@ -57,7 +58,7 @@ int main()
     // 2. gate: rumore a -70 dBFS chiuso (uscita < -80 dBFS); con la nota passa; stop rapido
     {
         auto p = make<BAmpProcessor> (1, 1);
-        setP (p->apvts, BAmpIDs::channel, 2); setP (p->apvts, BAmpIDs::gain, 80); setP (p->apvts, BAmpIDs::gate, -55);
+        setP (p->apvts, BAmpIDs::channel, 2); setP (p->apvts, BAmpIDs::gain, 80); setP (p->apvts, BAmpIDs::gate, -55); setP (p->apvts, BAmpIDs::gateOn, 1);
         juce::Random r (3);
         auto noise = run (*p, 96000, [&] (int) { return 0.0003f * (2.0f * r.nextFloat() - 1.0f); });
         const double nz = rmsDb (noise, 0, 48000, 96000);
@@ -80,7 +81,7 @@ int main()
     //     nella coda di una nota rispetto alla stessa nota senza rumore
     for (double nzDb : { -90.0, -80.0, -70.0 })
     {
-        auto mk = [] { auto q = make<BAmpProcessor> (1, 1); setP (q->apvts, BAmpIDs::channel, 2); setP (q->apvts, BAmpIDs::gain, 80); return q; };
+        auto mk = [] { auto q = make<BAmpProcessor> (1, 1); setP (q->apvts, BAmpIDs::channel, 2); setP (q->apvts, BAmpIDs::gain, 80); setP (q->apvts, BAmpIDs::gateOn, 1); return q; };
         const float na = (float) (std::pow (10.0, nzDb / 20.0) * 1.7320508);
         juce::Random r (11);
         auto noisy = [&] (int i, float note) { return note + na * (2.0f * r.nextFloat() - 1.0f) + 0.0005f * (float) std::sin (tp * 50.0 * i / sr); };
@@ -219,20 +220,58 @@ int main()
             check (std::abs (ct) < 1.0, "tuner MPM: entro 1 cent", ct);
         }
     }
-    // 5. level auto: dopo 3 s l'RMS di uscita pareggia la DI (pause ignorate)
+    // 5. noise gate spento di default; tone del boost vol + eq; oversampling spento; controlli per testata salvati
     {
         auto p = make<BAmpProcessor> (1, 1);
-        setP (p->apvts, BAmpIDs::channel, 1); setP (p->apvts, BAmpIDs::gain, 60);
-        auto sig = [] (int i) { const int s = i % 96000; return s < 48000 ? pluck (s, 110.0, 0.25, 0.3) : 0.0f; };   // 1 s suono, 1 s pausa
-        p->toggleAuto();
-        run (*p, 96000 * 2, sig);
-        p->applyAutoIfReady();
-        auto* lv = p->apvts.getParameter (BAmpIDs::level);
-        const float levelDb = lv->convertFrom0to1 (lv->getValue());
-        auto y = run (*p, 48000, [] (int i) { return pluck (i, 110.0, 0.25, 0.3); });
-        const double d = rmsDb (y, 0, 0, 48000) - 20.0 * std::log10 (0.3) - rmsDb ([&] { juce::AudioBuffer<float> b (1, 48000); for (int i = 0; i < 48000; ++i) b.setSample (0, i, pluck (i, 110.0, 0.25, 1.0)); return b; }(), 0, 0, 48000);
-        std::printf ("       level auto: %.1f dB, uscita - ingresso %.2f dB\n", levelDb, d);
-        check (std::abs (d) < 2.0, "level auto: RMS di uscita pari alla DI (dB)", d);
+        check (p->apvts.getRawParameterValue (BAmpIDs::gateOn)->load() < 0.5f, "noise gate spento di default");
+        // tone: 0 = scuro, 100 = brillante (alte sopra 5 kHz rispetto a 1 kHz, a parità del resto)
+        auto bright = [] (float tone)
+        {
+            auto q = make<BAmpProcessor> (1, 1);
+            setP (q->apvts, BAmpIDs::channel, 0); setP (q->apvts, BAmpIDs::gain, 20); setP (q->apvts, BAmpIDs::boost, 2); setP (q->apvts, BAmpIDs::boostTone, tone);
+            auto y = run (*q, 3 * 16384, [] (int i) { return 0.003f * (float) (std::sin (tp * 1000.0 * i / sr) + std::sin (tp * 7000.0 * i / sr)); });
+            return toneDb (y, 0, 16384, 3 * 16384, 7000.0) - toneDb (y, 0, 16384, 3 * 16384, 1000.0);
+        };
+        const double dark = bright (0.0f), mid = bright (50.0f), hi = bright (100.0f);
+        std::printf ("       boost tone: 7k - 1k = %.1f dB (0 %%), %.1f dB (50 %%), %.1f dB (100 %%)\n", dark, mid, hi);
+        check (dark < mid - 3.0 && hi > mid + 3.0, "boost tone: scuro a 0, brillante a 100", hi - dark);
+        // oversampling spento: latenza 0, uscita pulita e vicina al 2x
+        auto lvl = [] (int os, int& lat)
+        {
+            auto q = make<BAmpProcessor> (1, 1);
+            setP (q->apvts, BAmpIDs::channel, 1); setP (q->apvts, BAmpIDs::os, (float) os);
+            auto y = run (*q, 48000, [] (int i) { return pluck (i, 110.0, 0.25, 0.3); });
+            lat = q->getLatencySamples();
+            bool finite = true; for (int i = 0; i < 48000; ++i) finite &= std::isfinite (y.getSample (0, i));
+            return finite ? rmsDb (y, 0, 12000, 48000) : -999.0;
+        };
+        int lat2 = 0, lat1 = 0;
+        const double l2 = lvl (1, lat2), l1 = lvl (0, lat1);
+        std::printf ("       oversampling: 2x %.1f dB (latenza %d), spento %.1f dB (latenza %d)\n", l2, lat2, l1, lat1);
+        check (lat1 == 0 && std::abs (l1 - l2) < 1.5, "oversampling spento: latenza 0, stesso livello del 2x (dB)", l1 - l2);
+        // ogni testata ha tutti i suoi controlli, anche dopo aver salvato e riaperto il progetto
+        setP (p->apvts, BAmpIDs::channel, 0);
+        setP (p->apvts, BAmpIDs::level, -6.0f); setP (p->apvts, BAmpIDs::gateOn, 1); setP (p->apvts, BAmpIDs::boost, 2);
+        p->headMemory.switchPreset (0, 2); setP (p->apvts, BAmpIDs::channel, 2);
+        const bool fresh = std::abs (p->apvts.getRawParameterValue (BAmpIDs::level)->load()) < 0.01f && p->apvts.getRawParameterValue (BAmpIDs::boost)->load() < 0.5f;
+        setP (p->apvts, BAmpIDs::level, 3.0f);
+        juce::MemoryBlock mb; p->getStateInformation (mb);
+        auto r = make<BAmpProcessor> (1, 1);
+        r->setStateInformation (mb.getData(), (int) mb.getSize());
+        r->headMemory.switchPreset (2, 0); setP (r->apvts, BAmpIDs::channel, 0);
+        const float lv0 = r->apvts.getRawParameterValue (BAmpIDs::level)->load(), gt0 = r->apvts.getRawParameterValue (BAmpIDs::gateOn)->load();
+        r->headMemory.switchPreset (0, 2); setP (r->apvts, BAmpIDs::channel, 2);
+        const float lv2 = r->apvts.getRawParameterValue (BAmpIDs::level)->load();
+        // progetto di prima: oversampling 4x salvato come 1 -> resta 4x
+        {
+            juce::ValueTree old ("BAmp");
+            juce::ValueTree o ("PARAM"); o.setProperty ("id", BAmpIDs::os, nullptr); o.setProperty ("value", 1.0f, nullptr); old.appendChild (o, nullptr);
+            juce::MemoryBlock ob; if (auto x = old.createXml()) juce::AudioProcessor::copyXmlToBinary (*x, ob);
+            auto q = make<BAmpProcessor> (1, 1);
+            q->setStateInformation (ob.getData(), (int) ob.getSize());
+            check ((int) q->apvts.getRawParameterValue (BAmpIDs::os)->load() == 2, "progetto di prima: 4x resta 4x (off, 2x, 4x)");
+        }
+        check (fresh && std::abs (lv0 + 6.0f) < 0.05f && gt0 > 0.5f && std::abs (lv2 - 3.0f) < 0.05f, "testate indipendenti (level, gate, boost), salvate col progetto", lv0);
     }
     // gain a 0 = silenzio (come il potenziometro di un ampli vero); da 10 in su il suono pieno
     {
@@ -250,7 +289,7 @@ int main()
     // gate automatico: fruscio della DI a -55 dBFS (sopra la soglia di -60): nelle pause si chiude lo stesso
     {
         auto p = make<BAmpProcessor> (1, 1);
-        setP (p->apvts, BAmpIDs::channel, 2);
+        setP (p->apvts, BAmpIDs::channel, 2); setP (p->apvts, BAmpIDs::gateOn, 1);
         juce::Random r (9);
         auto y = run (*p, 4 * 48000, [&] (int i)
         {
@@ -333,13 +372,18 @@ int main()
     setP (p->apvts, BAmpIDs::channel, 2);
     const double cpu = cpuPercent (*p, di);
     check (cpu < 4.0, "CPU % di un core (lead, 2x)", cpu);
-    setP (p->apvts, BAmpIDs::os, 1);
+    setP (p->apvts, BAmpIDs::os, 2);
     const double cpu4 = cpuPercent (*p, di);
     check (cpu4 < 7.0, "CPU % di un core (lead, 4x)", cpu4);
     setP (p->apvts, BAmpIDs::os, 0);
+    const double cpu1 = cpuPercent (*p, di);
+    std::printf ("       CPU lead: 2x %.2f %%, 4x %.2f %%, oversampling spento %.2f %%\n", cpu, cpu4, cpu1);
+    check (cpu1 < cpu, "oversampling spento: meno CPU del 2x", cpu1);
+    setP (p->apvts, BAmpIDs::os, 1);
     for (int ch = 0; ch < 3; ++ch)
     {
         setP (p->apvts, BAmpIDs::channel, (float) ch);
+        setP (p->apvts, BAmpIDs::boost, ch == 2 ? 2.0f : 0.0f);   // il lead con il boost vol + eq: si vede anche tone
         snapshot (*p, (juce::String ("gui_bamp_") + juce::String (ch) + ".png").toRawUTF8(), [&] { run (*p, 24000, di); });
     }
     snapshot (*p, "gui_bamp_tuner.png", [&] { run (*p, 24000, [] (int i) { return 0.2f * (float) std::sin (tp * 82.41 * i / sr); });

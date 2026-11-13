@@ -846,6 +846,29 @@ int main (int argc, char** argv)
         check (std::abs (diff) < 1.0, "OUT auto: col comp l'uscita resta al volume d'ingresso (dB)", diff);
     }
 
+    // ---------------------------------------------------------------- 8h''. OUT auto fermo: si aggiusta solo dopo un cambio
+    // di parametri; se poi la chitarra suona più forte o più piano (nessun parametro toccato) l'OUT non si muove
+    {
+        auto p = make (juce::AudioChannelSet::mono(), juce::AudioChannelSet::mono());
+        setParam (*p, ParamIDs::compOn, 1.0f); setParam (*p, ParamIDs::compMode, 0.0f); setParam (*p, ParamIDs::compThr, -30.0f);
+        setParam (*p, ParamIDs::outAuto, 1.0f);
+        juce::Random rnd (5);
+        auto pick = [&] (float lvl) { return [&rnd, lvl] (int, int i) { const double t = std::fmod ((double) i / sr, 0.25); return (rnd.nextFloat() - 0.5f) * 2.0f * lvl * (float) (0.4 + 0.6 * std::exp (-t * 12.0)); }; };
+        run (*p, 1, (int) (3 * sr), pick (0.1f));
+        p->refreshNonRealtimeState();
+        const float before = p->getAutoOutDb();
+        run (*p, 1, (int) (3 * sr), pick (0.4f));   // 12 dB più forte: il comp lavora di più, ma l'OUT resta
+        p->refreshNonRealtimeState();
+        const float after = p->getAutoOutDb();
+        setParam (*p, ParamIDs::compThr, -20.0f);   // un cambio dell'utente: nuova misura
+        run (*p, 1, (int) (2 * sr), pick (0.4f));
+        p->refreshNonRealtimeState();
+        const float changed = p->getAutoOutDb();
+        std::printf ("       OUT auto: %.2f dB, dopo 12 dB in più in ingresso %.2f dB, dopo un cambio di soglia %.2f dB\n", before, after, changed);
+        check (before > 1.0f && std::abs (after - before) < 0.01f, "OUT auto: senza cambi di parametri resta fermo anche se l'ingresso cambia", after - before);
+        check (std::abs (changed - before) > 0.5f, "OUT auto: dopo un cambio di soglia si ricalcola", changed - before);
+    }
+
     // ---------------------------------------------------------------- 8g'. autogain spento: nessun make-up
     {
         const char* modes[] = { "rhythm", "lead", "clean" };

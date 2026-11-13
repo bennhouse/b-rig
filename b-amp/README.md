@@ -2,7 +2,7 @@
 
 The amp head of the suite: three channels (clean, British crunch, modern high gain), a two-level boost, a DI-keyed two-stage noise gate built in, and a fullscreen tuner. Every head keeps its own settings.
 
-**Formats:** AU, VST3 · **Platforms:** macOS (universal); Windows/Linux via the same CMake project · **Latency:** a few samples of oversampling filters, reported to the host · **Channels:** mono → mono, stereo → stereo (summed) · **CPU:** about 3.3 % of one core (lead, 2x), 6 % at 4x
+**Formats:** AU, VST3 · **Platforms:** macOS (universal); Windows/Linux via the same CMake project · **Latency:** a few samples of oversampling filters, reported to the host (0 with oversampling off) · **Channels:** mono → mono, stereo → stereo (summed) · **CPU:** about 3 % of one core (lead, 2x), 5.6 % at 4x, 1.7 % with oversampling off
 
 ## Channels (`[ clean | crunch | lead ]`, top right)
 
@@ -10,7 +10,7 @@ The amp head of the suite: three channels (clean, British crunch, modern high ga
 - **crunch** (orange, British style): 4 stages; the gain curve speeds up in its top half, so it goes from a classic crunch at noon (34 dB across the stages) to enough gain for djent at full (66 dB). `tight` moves the high-passes *between* the stages: high (> 60 %) cuts lows up to 180 Hz plus a 750 Hz peak for a tight, hot-rodded British crunch; low (< 40 %) drops the cut to 55 Hz and lets the lows saturate into a dense wall of sound.
 - **lead** (crimson, modern high gain): a built-in tight boost (progressive first-order high-pass up to 180 Hz + upper-mid push at 1.8 kHz, Q 0.9, 3 to 9 dB, both on `tight`), then 5 stages with the gains of a real high-gain triode preamp (each 12AX7 stage gives 30-35 dB, partly lost in the divider to the next one): 64 dB across the stages at 30 %, 71 dB at 50 %, 88 dB at full, so it is a wall of gain already at 30 %; the 3rd is the classic "cold clipper" (strongly asymmetric clipping, preceded by a 220 Hz high-pass that removes intermodulation on low-tuned power chords). After the preamp, the lead voicing: low mids scooped at 420 Hz (−2.5 dB), full 6L6 lows. Its `resonance` is wider and deeper (up to +14 dB at 82 Hz, Q 1.3) and `presence` reaches +10 dB at 3.2 kHz, so the head can go from tight to very deep.
 
-**Each head keeps its own controls**: `tight`, `gain`, `bass`, `mid`, `treble`, `presence`, `resonance` and `master` are remembered per channel while the plugin is open (gate, boost and `level` are shared). Each head starts from its own defaults (gain 10 % clean, 50 % crunch, 30 % lead; tight 0 % on all three); reloading the plugin starts from the defaults again. Double-click a channel to reset that head; double-click a value to return it to that head's default.
+**Each head keeps all its own controls**: `tight`, `gain`, `bass`, `mid`, `treble`, `presence`, `resonance`, `master`, `level`, `noise gate` and `threshold`, `boost` and its `tone`, and `oversampling`. Switching channel brings back that head's settings. They are saved with the project (and in b-rig presets), so all three heads come back as you left them. Each head starts from its own defaults (gain 10 % clean, 50 % crunch, 30 % lead; tight 0 % and the noise gate off on all three). Double-click a channel to reset that head; double-click a value to return it to that head's default.
 
 **Gain at 0 is silence**, like the gain pot of a real amp: over the first 10 % of its travel the signal fades in from nothing (an S curve), and from 10 % up the gain works on the stages in dB, like a logarithmic pot (every 10 % adds the same dB). At 0 the output is exact digital silence.
 
@@ -36,7 +36,7 @@ Full mids on the clean, the British upper-mid push on the crunch, a tight low en
 
 ## Gain stages
 
-Each stage, at 2x oversampling (4x optional, `[ 2x | 4x ]`):
+Each stage, at 2x oversampling (`[ off | 2x | 4x ]`: 4x lowers aliasing further; `off` runs the stages at the session rate, with no latency and about half the CPU of 2x. The anti-aliasing of the waveshapers keeps it usable; on the lead with a lot of gain a little more aliasing can be heard in the very high notes):
 1. a state-variable high-pass that decides how much low end enters the distortion;
 2. **grid conduction and blocking**: positive peaks above about 0.8 make the grid conduct; they are compressed softly (about 18 %) and charge the coupling capacitor, which shifts the operating point towards cutoff (1.5 ms attack, 30 ms recovery). As on a real preamp, a hard hit gets dirtier and more compressed for a moment, then opens up again;
 3. an asymmetric waveshaper (softer positive half, harder negative half) with **first-order antiderivative anti-aliasing (ADAA)**, using a numerically stable log-cosh antiderivative and an analytic fallback when the input barely moves;
@@ -56,7 +56,7 @@ Each stage, at 2x oversampling (4x optional, `[ 2x | 4x ]`):
 
 ## Noise: DI-keyed dual-stage gate
 
-A real high-gain amp raises the DI noise by up to 60 dB. The whole system switches on and off with `noise gate` (on by default; off = no gate and no hum notch); `threshold` (−90…−20 dB) sets the gate:
+A real high-gain amp raises the DI noise by up to 60 dB. The whole system switches on and off with `noise gate` (off by default; off = no gate and no hum notch); `threshold` (−90…−20 dB) sets the gate:
 1. **Input guard**: a 35 Hz Butterworth high-pass (DC and rumble) and, when `gate` is above −85 dB, two very narrow notches (Q 40) at 50 and 100 Hz against mains hum.
 2. **One detector, two actions**: the detector reads only the clean DI (before the notches, which would ring), and drives
    - **A**, a VCA before the preamp, so noise never enters the gain stages;
@@ -72,10 +72,11 @@ A real high-gain amp raises the DI noise by up to 60 dB. The whole system switch
 `boost` (row 1, after the gate) is one button that cycles `off` → `vol` → `vol + eq`. It sits after gate A, like a pedal in front of the amp, so it never raises the hiss in the pauses. Every change ramps in 30 ms.
 - **vol**: +6 dB into the amp.
 - **vol + eq**: +6 dB, a first-order 90 Hz high-pass (tighter lows in the preamp), +4.5 dB at 1.6 kHz (Q 0.8, where note definition and articulation live), −3 dB above 5.5 kHz (no extra fizz) and a very light ADAA drive (about 1 dB of peak compression) for a bit more air.
+- **tone** (only with `vol + eq`, right of the button): the colour of the boost. At 50 % it is the boost above; towards 0 the articulation peak moves down to about 1 kHz and the top drops to −8 dB above 5.5 kHz (darker, rounder); towards 100 % the peak moves up to about 2.4 kHz and the top rises to +2 dB (brighter, more cutting). Measured, 7 kHz against 1 kHz: −13.1 dB at 0 %, −7.5 dB at 50 %, −1.8 dB at 100 %.
 
 ## Level
 
-`level` (−24…+12 dB) and **`[ auto ]`**: 3 s of measurement that only counts the moments when the DI is above −55 dBFS (you are playing), so pauses never make it turn up the noise. Then it sets `level` so the output RMS equals the DI's.
+`level` (−24…+12 dB): the output of the head, after the power amp.
 
 ## Tuner
 
@@ -83,16 +84,16 @@ The tuning-fork button opens a fullscreen tuner over the whole window. It reads 
 
 ## Interface
 
-Borderless: one continuous #0D0D0F surface, no boxes. At the top, the title (its "b" takes the colour of the active head), `channel`, `oversampling [ 2x | 4x ]` (2x is lighter on the CPU, 4x lowers aliasing further) and the tuner, all centred on the title's letters. In the centre, 50 % of the window wide, a minimal, fully symmetric vector front view of the active head: vertical slats for clean, a woven cloth with double piping for crunch, perforated metal for lead, the same simple handle on top and the same feet below on all three. It glows from inside in the channel colour as the stages saturate; a pilot light in the top-left corner shows the gate, and the channel name sits in the bottom-right corner, directly on the grille.
+Borderless: one continuous #0D0D0F surface, no boxes. At the top, the title (its "b" takes the colour of the active head), `channel`, `oversampling [ off | 2x | 4x ]` and the tuner, all centred on the title's letters. In the centre, 50 % of the window wide, a minimal, fully symmetric vector front view of the active head: vertical slats for clean, a woven cloth with double piping for crunch, perforated metal for lead, the same simple handle on top and the same feet below on all three. It glows from inside in the channel colour as the stages saturate; a pilot light in the top-left corner shows the gate, and the channel name sits in the bottom-right corner, directly on the grille.
 
 **Click the pilot light** and the head turns around (no animation): the back shows the chassis, the transformers and the tubes in real proportions (EL34 / 6L6GC about 32 × 110 mm with their octal base, ECC83 / 12AX7 about 22 × 56 mm), their filaments glowing harder as the amp saturates. Each head has its own back: clean a solid lower back panel, crunch a cage of vertical bars, lead alternate horizontal louvres. No text on the back. Click anywhere on the back, change channel or reopen the plugin to see the front again.
 
 Below the head, three rows:
-1. `noise gate` on/off and its `threshold`, then `boost`;
+1. `noise gate` on/off and its `threshold`, then `boost` and, with `vol + eq`, `tone`;
 2. `gain`, `tight` | `bass`, `mid`, `treble` | `presence`, `resonance` (a faint vertical divider between the groups);
-3. aligned right: `master`, `level` and `[ auto ]`.
+3. aligned right: `master` and `level`.
 
-At the bottom, the output level on the right (the auto status appears on the left while it measures).
+At the bottom, the output level on the right.
 
 Sliders have `< >` arrows and fixed-width boxes (sized on the longest value, e.g. "-100.0 dB", "100 %"). Every control takes the colour of the active channel.
 
@@ -120,7 +121,7 @@ Sliders have `< >` arrows and fixed-width boxes (sized on the longest value, e.g
 - **Noise study** (lead, gain 80 %, DI hiss at −90 / −80 / −70 dBFS + 50 Hz hum at −66 dBFS, default gate): pauses and the space between notes are digital silence (−140 dBFS or lower), no spurious gate openings, the noise floor is found by itself (−86 / −77 / −67 dBFS). Extra hiss above 5 kHz in a decaying tail compared with the same note without noise: +1.5 / +4.5 / +9.7 dB (it was +5.6 / +6.5 / +10.6 before the input anti-hiss filter).
 - Tone stack: treble moves 5 kHz by 17.7 dB, bass moves 80 Hz by 11 dB; the impulse response decays (stable).
 - Tuner: 82.41 Hz → −0.02 cents, 196 Hz → −0.16 cents, 440 Hz → −0.65 cents.
-- `auto` level with pauses in the take: output minus input +0.09 dB.
+- Noise gate off by default. Oversampling off: latency 0, the same level as 2x (within 0.01 dB), 1.7 % CPU against 3 % at 2x. `level`, `noise gate` and `boost` set on one head come back on that head after switching, and after saving and reopening the project.
 - `noise gate` off: the amplified DI noise passes (−33.7 dBFS); on: digital silence.
 - Automatic threshold: DI hiss at −55 dBFS (above the −60 dB threshold) in the lead: the note comes out at −3.2 dBFS, the pause at −136 dBFS. Before, the gate stayed open and the hiss came out at −19 dBFS.
 - Gain 0 in the lead: exact digital silence; gain 10: −3.7 dBFS.
@@ -136,7 +137,7 @@ Click the b-amp logo for a short description of the plugin, signed b-suite (free
 
 ## Updates
 
-The about panel shows the version (the whole b-suite is in beta). Once a day at most, while the window is open, the plugin asks the GitHub releases whether there is a newer b-rig (the plugins come with the b-rig installer and share its version). The answer is shared with the other b-suite plugins and b-rig, so they make one request a day between them. If there is one, a small notice appears in the bottom-right corner ("update available" and the new version). Clicking it opens the about panel, where a `download` button opens the release page; its x closes it. A small square in the plugin's colour stays next to the logo, so the update can still be found from the logo. The request is anonymous and carries no data about you. Offline or with the releases unreachable, nothing is shown. Inside b-rig the modules never check, because b-rig updates as one app.
+The about panel shows the version (the whole b-suite is in beta) and a `check for updates` button, which asks GitHub at once and says whether a newer version exists. Once a day at most, while the window is open, the plugin asks the GitHub releases whether there is a newer b-rig (the plugins come with the b-rig installer and share its version). The answer is shared with the other b-suite plugins and b-rig, so they make one request a day between them. If there is one, a small notice appears in the bottom-right corner ("update available" and the new version). Clicking it opens the about panel, where a `download` button opens the release page; its x closes it. A small square in the plugin's colour stays next to the logo, so the update can still be found from the logo. The request is anonymous and carries no data about you. Offline or with the releases unreachable, nothing is shown. Inside b-rig the modules never check, because b-rig updates as one app.
 
 ## Build
 

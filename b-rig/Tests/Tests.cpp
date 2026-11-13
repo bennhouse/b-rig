@@ -375,7 +375,11 @@ int main()
             auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("brig_presets_test");
             dir.deleteRecursively(); dir.createDirectory();
             rig::RigComponent::presetDirOverride() = dir;
-            ui.loadPreset ("default");
+            check (rig::RigComponent::startupPreset() == "clean slate", "prima installazione: si parte da clean slate, nessun preset");
+            check (rig::RigComponent::listPresets().size() == 1, "prima installazione: solo clean slate nell'elenco", (int) rig::RigComponent::listPresets().size());
+            ui.loadPreset ("clean slate");
+            e.resetDefault();
+            ui.clearDirty();
             check (! ui.dirty, "preset appena caricato: niente save");
             juce::Thread::sleep (900);   // passato il tempo in cui il caricamento non conta come modifica
             ui.paramTouchedForTest();
@@ -423,7 +427,7 @@ int main()
             ui.duplicatePresetForTest();
             check (dir.getChildFile ("User 5.brig").existsAsFile() && ui.presetNamesForTest()[1] == "User 5", "save as new: copia del selezionato, in cima");
             // preset d'avvio: si sceglie dalla lista, segue la rinomina; eliminato, si parte da clean slate (undo lo riporta)
-            check (rig::RigComponent::startupPreset() == "default", "all'inizio si carica \"default\" (la catena di fabbrica)");
+            check (rig::RigComponent::startupPreset() == "clean slate", "all'inizio si carica clean slate (la catena vuota)");
             ui.setStartupForTest (ui.presetNamesForTest().indexOf ("User 3"));
             check (rig::RigComponent::startupPreset() == "User 3", "load at start-up: User 3 si caricherà all'avvio");
             ui.selectPresetForTest (ui.presetNamesForTest().indexOf ("User 3"));
@@ -504,6 +508,179 @@ int main()
             ui.setTunerActive (false);
             e.tunerMutes = true;
         }
+        // clean slate e poi un modulo: l'interfaccia non deve toccare i moduli tolti e già liberati (prima si chiudeva)
+        {
+            ui.loadPreset ("clean slate");
+            e.addModule ("amp"); e.addModule ("delay"); e.addModule ("verb");
+            ui.tickForTest();
+            ui.loadPreset ("clean slate");
+            for (int k = 0; k < 3; ++k) { ui.tickForTest(); e.collectGarbage(); pump (20); }
+            ui.addFromLibrary ("tight");
+            ui.addFromLibrary ("delay");
+            ui.tickForTest();
+            check (e.numSlots() == 2, "clean slate, poi due moduli dalla libreria: nessun crash", e.numSlots());
+        }
+        // b-amp spento dall'utente: solo "off". Muto per protezione (cassa tolta): "safe muted"
+        {
+            ui.loadPreset ("clean slate");
+            e.addModule ("amp"); e.addModule ("blend");
+            const int ia = indexOfId (e, "amp");
+            check (e.slot (ia).safeMuted.load(), "b-amp appena aggiunto: safe muted");
+            ui.requestEnabled (ia, true);
+            check (e.slot (ia).enabled.load() && ! e.slot (ia).safeMuted.load(), "armato a mano: acceso");
+            ui.requestEnabled (ia, false);
+            check (! e.slot (ia).enabled.load() && ! e.slot (ia).safeMuted.load(), "spento dall'utente: solo off, niente safe muted");
+            rigBlendLoadTestIr (*e.slot (indexOfId (e, "blend")).proc);
+            ui.checkCabs(); ui.checkCabs();
+            check (! e.slot (ia).enabled.load(), "spento dall'utente: un IR caricato non lo riaccende");
+            ui.requestEnabled (ia, true);
+            e.removeSlot (indexOfId (e, "blend"));
+            check (! e.slot (ia).enabled.load() && e.slot (ia).safeMuted.load(), "b-blend tolto dopo l'ampli acceso: safe muted");
+            pump (60);
+            savePng (ui, "gui_brig_safe_muted.png");
+        }
+        // libreria: un modulo già nella catena ha un - che lo toglie
+        {
+            ui.loadPreset ("clean slate");
+            ui.addFromLibrary ("tight");
+            check (ui.inChain ("tight"), "tight nella catena");
+            ui.requestRemove (ui.viewIndexOf ("tight"));
+            check (! ui.inChain ("tight") && e.numSlots() == 0, "il - della libreria lo toglie");
+        }
+        // split: due rami paralleli. Si divide dalla DI con B copia di A (il suono non cambia); il punto di split si
+        // sposta; ogni ramo ha i suoi moduli (uno per tipo per ramo); wide = A a sinistra, B a destra
+        {
+            ui.loadPreset ("clean slate");
+            ui.addFromLibrary ("tight"); ui.addFromLibrary ("distort");
+            ui.toggleSplit();
+            check (e.isSplit() && e.laneSize (0) == 0 && e.laneSize (1) == 2 && e.laneSize (2) == 2, "split: A = la catena, B = una copia", e.laneSize (2));
+            check (e.wide.load() && ! e.widen.load(), "split: stereo acceso di default, widen spento");
+            ui.addFromLibrary ("delay");
+            check (e.laneHas (1, "delay") && ! e.laneHas (2, "delay"), "dalla libreria: nel ramo che si sta guardando");
+            ui.showLane (2);
+            check (! ui.inChain ("delay") && ui.inChain ("distort"), "ramo B: b-delay non c'è, b-distort sì");
+            ui.addFromLibrary ("verb");
+            check (e.laneHas (2, "verb") && ! e.laneHas (1, "verb"), "ramo B: b-verb solo qui");
+            e.moveSplit (2, 1);
+            check (e.laneSize (0) == 1 && e.slot (0).info->id == "tight" && ! e.laneHas (1, "tight") && ! e.laneHas (2, "tight"), "punto di split spostato dopo b-tight: in comune");
+            check (! e.canPlace ("tight", 1), "b-tight in comune: non può stare anche in un ramo");
+            e.moveSplit (2, 0);
+            check (e.laneSize (0) == 0 && e.laneHas (1, "tight") && e.laneHas (2, "tight"), "punto di split di nuovo alla DI: b-tight in tutti e due i rami");
+            e.moveSplit (2, 1);   // b-tight in comune, poi i due rami
+            pump (60);
+            savePng (ui, "gui_brig_split.png");   // ramo b
+            const auto saved = e.saveRig();
+            rig::RigEngine copy; copy.loadRig (saved);
+            check (copy.isSplit() && copy.laneSize (1) == e.laneSize (1) && copy.laneSize (2) == e.laneSize (2), "preset con lo split: rami uguali");
+            ui.showLane (1);
+            pump (60);
+            savePng (ui, "gui_brig_split_a.png");
+            ui.toggleSplit();
+            check (ui.confirmVisibleForTest(), "riunire due rami diversi chiede conferma");
+            ui.confirmForTest();
+            check (! e.isSplit() && e.laneHas (0, "delay") && ! e.laneHas (0, "verb"), "riuniti: resta il ramo A");
+        }
+        // trascinamento con lo split: shift porta il modulo nell'altro ramo; ogni ramo ha i suoi moduli e la libreria
+        // segue il ramo che si vede; un modulo nella parte comune non entra in un ramo (e viceversa)
+        {
+            ui.loadPreset ("clean slate");
+            ui.addFromLibrary ("tight"); ui.addFromLibrary ("distort");
+            ui.toggleSplit();
+            e.moveSplit (1, 1);   // b-tight in comune, b-distort in tutti e due i rami
+            ui.showLane (1);
+            ui.addFromLibrary ("delay");
+            check (ui.inChain ("delay") && e.laneHas (1, "delay"), "ramo a: b-delay");
+            const auto v = ui.viewSlots();
+            int dIdx = -1; for (int d = 0; d < (int) v.size(); ++d) if (e.slot (v[(size_t) d]).info->id == "delay") dIdx = d;
+            const bool moved = ui.dragToLaneForTest (dIdx, true, 0);
+            check (moved && e.laneHas (2, "delay") && ! e.laneHas (1, "delay") && ui.viewLane == 2, "shift durante il trascinamento: b-delay passa nel ramo b e la vista lo segue");
+            ui.showLane (1);
+            check (! ui.inChain ("delay") && ui.inChain ("distort") && ui.inChain ("tight"), "ramo a: b-delay di nuovo libero in libreria, b-tight in comune");
+            ui.showLane (2);
+            check (ui.inChain ("delay"), "ramo b: b-delay già presente");
+            // b-distort (in tutti e due i rami) non può andare nella parte comune
+            const int n0 = e.numSlots();
+            const auto vb = ui.viewSlots();
+            int dist = -1; for (int d = 0; d < (int) vb.size(); ++d) if (e.slot (vb[(size_t) d]).info->id == "distort") dist = d;
+            ui.dragCardForTest (dist, 0);
+            check (e.numSlots() == n0 && ! e.laneHas (0, "distort") && e.laneHas (1, "distort") && e.laneHas (2, "distort"), "b-distort nei due rami: non entra nella parte comune");
+            // b-delay (solo nel ramo b) nella parte comune: va bene
+            const auto vc = ui.viewSlots();
+            int del = -1; for (int d = 0; d < (int) vc.size(); ++d) if (e.slot (vc[(size_t) d]).info->id == "delay") del = d;
+            ui.dragCardForTest (del, 1);
+            check (e.laneHas (0, "delay") && ! e.laneHas (2, "delay"), "b-delay solo in un ramo: entra nella parte comune");
+            ui.showLane (1);
+            check (ui.inChain ("delay"), "in comune: si vede anche nel ramo a");
+            ui.showLane (2);
+            pump (60);
+            savePng (ui, "gui_brig_split_drag.png");
+            // a metà del trascinamento: nel ramo (b-distort verso la fine del ramo b), nella parte comune (non può:
+            // rosso), e con shift nel ramo a
+            ui.previewDragForTest (2, ui.chainXForTest (900), false);
+            pump (40); savePng (ui, "gui_brig_drag_lane.png");
+            ui.previewDragForTest (2, ui.chainXForTest (5), false);
+            pump (40); savePng (ui, "gui_brig_drag_shared.png");
+            ui.previewDragForTest (2, ui.chainXForTest (600), true);
+            pump (40); savePng (ui, "gui_brig_drag_shift.png");
+            check (ui.viewLane == 1, "shift tenuto: si vede l'altro ramo");
+            ui.cancelDragForTest();
+            check (ui.viewLane == 2, "trascinamento annullato: si torna al ramo di partenza");
+        }
+        // il suono: rami uguali = catena unica; wide = A a sinistra e B a destra; ampli prima dello split coperto
+        // solo con una cassa in entrambi i rami
+        {
+            auto build = [] (rig::RigEngine& x) { x.prepare (sr, kBlock); x.addModule ("tight"); x.addModule ("distort"); };
+            auto sig = [] (int i) { return 0.2f * (float) std::sin (tp * 110.0 * i / sr) * (float) std::exp (-(i % 24000) / 9000.0); };
+            rig::RigEngine one; build (one);
+            rig::RigEngine two; build (two); two.splitChain();
+            const auto a = runEngine (one, 24000, sig), b = runEngine (two, 24000, sig);
+            float diff = 0; for (int i = 0; i < 24000; ++i) diff = juce::jmax (diff, std::abs (a.getSample (0, i) - b.getSample (0, i)));
+            check (diff < 1.0e-4f, "split con B copia di A: stesso suono della catena unica", diff);
+            two.removeSlot (two.laneStart (2) + 1);   // b-distort solo nel ramo A
+            two.wide = true;
+            const auto w = runEngine (two, 24000, sig);
+            rig::RigEngine onlyTight; onlyTight.prepare (sr, kBlock); onlyTight.addModule ("tight");
+            const auto t = runEngine (onlyTight, 24000, sig);
+            float dl = 0, dr = 0;
+            for (int i = 4800; i < 24000; ++i) { dl = juce::jmax (dl, std::abs (w.getSample (0, i) - a.getSample (0, i))); dr = juce::jmax (dr, std::abs (w.getSample (1, i) - t.getSample (1, i))); }
+            check (dl < 1.0e-3f && dr < 1.0e-3f, "wide: A (con b-distort) a sinistra, B (senza) a destra", juce::jmax (dl, dr));
+            rig::RigEngine c; c.prepare (sr, kBlock); c.addModule ("amp"); c.splitChain(); c.moveSplit (1, 1);
+            c.addModuleAt ("blend", 1, 0);
+            check (! c.cabAfter (0, false), "ampli prima dello split, cassa solo in A: non coperto");
+            c.addModuleAt ("blend", 2, 0);
+            check (c.cabAfter (0, false), "cassa in entrambi i rami: coperto");
+        }
+        // widen: il ramo b in ritardo del tempo misurato. Con due rami uguali e una nota a 110 Hz il tempo migliore è un
+        // multiplo del periodo (9,09 ms): sommati in mono non si cancellano
+        {
+            rig::RigEngine w; w.prepare (sr, kBlock); w.addModule ("tight"); w.splitChain();
+            auto note = [] (int i) { double v = 0; for (int h = 1; h <= 6; ++h) v += std::sin (tp * 110.0 * h * i / sr) / h; return (float) (0.15 * v); };
+            w.startWidenMeasure();
+            int k = 0;
+            while (! w.pollWiden() && k < 40) { runEngine (w, 4800, note, k * 4800); ++k; }
+            const float ms = w.widenMs.load();
+            const double period = 1000.0 / 110.0, frac = std::fmod ((double) ms, period) / period;
+            std::printf ("       widen: %.2f ms (periodo 9.09 ms), misura in %d blocchi da 100 ms\n", ms, k);
+            check (w.widen.load() && ms >= 5.0f && ms <= 25.0f && (frac < 0.03 || frac > 0.97), "widen: ritardo in un multiplo del periodo (nessuna cancellazione)", ms);
+            auto y = runEngine (w, 48000, note, 0);
+            w.wide = false;   // somma mono
+            auto m = runEngine (w, 48000, note, 48000);
+            rig::RigEngine one; one.prepare (sr, kBlock); one.addModule ("tight");
+            auto ref = runEngine (one, 96000, note, 0);
+            const double lm = rmsDb (m, 0, 24000, 48000), lr = rmsDb (ref, 0, 72000, 96000);
+            std::printf ("       widen in mono: %.2f dB rispetto alla catena unica\n", lm - lr);
+            check (std::abs (lm - lr) < 1.0, "widen sommato in mono: stesso livello della catena unica", lm - lr);
+            juce::ignoreUnused (y);
+            const auto t = w.saveRig();
+            rig::RigEngine r2; r2.loadRig (t);
+            check (r2.widen.load() && std::abs (r2.widenMs.load() - ms) < 0.01f, "widen e il suo tempo si salvano nel preset");
+        }
+        // primo avvio
+        ui.showWelcome();
+        pump (100);
+        check (ui.welcomeVisibleForTest(), "primo avvio: la finestra sugli IR");
+        savePng (ui, "gui_brig_welcome.png");
+        ui.closeScreensForTest();
         ui.showInfo ("tight");
         pump (100);
         savePng (ui, "gui_brig_info.png");

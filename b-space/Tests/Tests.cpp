@@ -43,13 +43,16 @@ int main()
         check (std::abs (got - want) <= 2, "dist comp spento: ritardo del diretto = distanza / velocità del suono", got - want);
         prm.distComp = true;
         const auto h = BSpaceProcessor::geometry (prm);
+        prm.room = 2;
+        const auto hg = BSpaceProcessor::geometry (prm);
         float firstRefl = 1.0f; int which = 1;
-        for (int k = 1; k < BSpaceProcessor::kTaps; ++k) if (h.paths[(size_t) k].delayS < firstRefl) { firstRefl = h.paths[(size_t) k].delayS; which = k; }
-        auto z = runWith ({ { BSpaceIDs::walls, 3.0f } }, 9600, impulse);
+        for (int k = 1; k < BSpaceProcessor::kTaps; ++k) if (hg.paths[(size_t) k].delayS < firstRefl) { firstRefl = hg.paths[(size_t) k].delayS; which = k; }
+        juce::ignoreUnused (h);
+        auto z = runWith ({ { BSpaceIDs::room, 2.0f } }, 9600, impulse);   // garage: cemento
         const int at = (int) std::round (firstRefl * sr);
         // dopo il diretto (che si spegne nel passa-basso entro pochi campioni) la prima riflessione
         const int seen = firstAbove (z, 0, 0.02f, 40);
-        std::printf ("       prima riflessione (percorso %d, 5 = soffitto): attesa +%d campioni, vista a %d\n", which, at, seen);
+        std::printf ("       prima riflessione (percorso %d, 5 = soffitto, 6 = pavimento): attesa +%d campioni, vista a %d\n", which, at, seen);
         check (std::abs (seen - at) <= 30, "prima riflessione al ritardo relativo (d - d0) della geometria", seen - at);
     }
     // 3. ampli a destra dell'ascoltatore: il destro arriva prima ed è più forte
@@ -71,21 +74,77 @@ int main()
         std::printf ("       8 kHz: in asse %.1f dB, di spalle %.1f dB\n", on, back);
         check (on - back > 6.0, "direttività del cono: di spalle l'ampli perde le alte", on - back);
     }
-    // 5. pareti: cemento lascia una coda molto più lunga del trattato; tutto si spegne (FDN stabile)
+    // 5. stanze: il garage in cemento lascia una coda molto più lunga dello studio trattato; tutto si spegne (FDN stabile)
     {
-        auto tail = [&] (float walls, float space)
+        auto tail = [&] (int room)
         {
             auto p = make<BSpaceProcessor> (1, 2);
-            setP (p->apvts, BSpaceIDs::walls, walls);
-            if (space > 0) p->applySpace ((int) space);
+            setP (p->apvts, BSpaceIDs::room, (float) room);
+            p->applyRoom (room);
             p->prepareToPlay (sr, block);
             return run (*p, 6 * 48000, [] (int i) { return i < 480 ? (float) (0.5 * std::sin (tp * 440.0 * i / sr)) : 0.0f; });
         };
-        auto t = tail (0.0f, 0.0f), c = tail (3.0f, 0.0f), h = tail (3.0f, 3.0f);
+        auto t = tail (0), c = tail (2), h = tail (5);
         const double tr = rmsDb (t, 0, 9600, 28800), co = rmsDb (c, 0, 9600, 28800), end = rmsDb (h, 0, 5 * 48000, 6 * 48000);
-        std::printf ("       coda 200-600 ms: treated %.1f dB, concrete %.1f dB; hall in cemento dopo 5 s %.1f dB\n", tr, co, end);
-        check (co - tr > 6.0, "pareti: il cemento suona molto più del trattato", co - tr);
+        std::printf ("       coda 200-600 ms: studio %.1f dB, garage %.1f dB; chiesa dopo 5 s %.1f dB\n", tr, co, end);
+        check (co - tr > 6.0, "stanze: il garage in cemento suona molto più dello studio trattato", co - tr);
         check (end < -70.0, "la coda si spegne (rete di ritardi stabile)", end);
+    }
+    // 5b. materiali: le prime riflessioni dello studio (pareti trattate) sono più scure di quelle del garage
+    {
+        auto hfRatio = [&] (int room)
+        {
+            auto p = make<BSpaceProcessor> (1, 2);
+            setP (p->apvts, BSpaceIDs::room, (float) room);
+            p->prepareToPlay (sr, block);
+            auto y = run (*p, 4800, impulse);
+            // energia sopra i 4 kHz rispetto a quella sotto 1 kHz, nei rimbalzi (dopo il diretto, prima della coda piena)
+            juce::IIRFilter hp, lp;
+            hp.setCoefficients (juce::IIRCoefficients::makeHighPass (sr, 4000.0)); lp.setCoefficients (juce::IIRCoefficients::makeLowPass (sr, 1000.0));
+            double eh = 1e-20, el = 1e-20;
+            for (int i = 0; i < 1500; ++i)
+            {
+                const float v = i < 60 ? 0.0f : y.getSample (0, i);
+                const float h = hp.processSingleSampleRaw (v), l = lp.processSingleSampleRaw (v);
+                eh += (double) h * h; el += (double) l * l;
+            }
+            return 10.0 * std::log10 (eh / el);
+        };
+        const double studio = hfRatio (0), garage = hfRatio (2);
+        std::printf ("       rimbalzi, energia sopra 4 kHz rispetto a sotto 1 kHz: studio %.1f dB, garage %.1f dB\n", studio, garage);
+        check (garage - studio > 3.0, "materiali: il trattato si mangia le alte dei rimbalzi, il cemento no", garage - studio);
+    }
+    // 5c. ampli contro una parete: più bassi (80 Hz) rispetto al centro della stanza
+    {
+        auto low = [&] (float sy)
+        {
+            auto p = make<BSpaceProcessor> (1, 2);
+            setP (p->apvts, BSpaceIDs::room, 2.0f); setP (p->apvts, BSpaceIDs::srcY, sy); setP (p->apvts, BSpaceIDs::distComp, 1.0f);
+            p->prepareToPlay (sr, block);
+            auto y = run (*p, 24000, [] (int i) { return (float) (0.2 * std::sin (tp * 80.0 * i / sr) + 0.2 * std::sin (tp * 2000.0 * i / sr)); });
+            return toneDb (y, 0, 12000, 24000, 80.0) - toneDb (y, 0, 12000, 24000, 2000.0);
+        };
+        const double wall = low (0.03f), mid = low (0.45f);
+        std::printf ("       80 Hz rispetto a 2 kHz: contro la parete %.1f dB, a metà stanza %.1f dB\n", wall, mid);
+        check (wall - mid > 2.0, "ampli contro la parete: più bassi", wall - mid);
+    }
+    // 5d. mix: a 0 esce il segnale che entra, identico
+    {
+        juce::Random r (3);
+        std::vector<float> in (9600); for (auto& v : in) v = 0.3f * (r.nextFloat() - 0.5f);
+        auto y = runWith ({ { BSpaceIDs::mix, 0.0f } }, 9600, [&] (int i) { return in[(size_t) i]; });
+        float d = 0; for (int i = 0; i < 9600; ++i) d = juce::jmax (d, std::abs (y.getSample (0, i) - in[(size_t) i]), std::abs (y.getSample (1, i) - in[(size_t) i]));
+        check (d < 1.0e-6f, "mix 0: esce il segnale d'ingresso", d);
+    }
+    // 5e. progetti di prima: "space" garage diventa la stanza garage
+    {
+        auto p = make<BSpaceProcessor> (1, 2);
+        juce::ValueTree t ("BSpace");
+        juce::ValueTree a ("PARAM"); a.setProperty ("id", "space", nullptr); a.setProperty ("value", 1.0f, nullptr); t.appendChild (a, nullptr);
+        juce::ValueTree b ("PARAM"); b.setProperty ("id", "walls", nullptr); b.setProperty ("value", 3.0f, nullptr); t.appendChild (b, nullptr);
+        juce::MemoryBlock mb; if (auto x = t.createXml()) juce::AudioProcessor::copyXmlToBinary (*x, mb);
+        p->setStateInformation (mb.getData(), (int) mb.getSize());
+        check ((int) p->apvts.getRawParameterValue (BSpaceIDs::room)->load() == 2, "progetto di prima: space garage -> stanza garage");
     }
     // 6. livello: un suono lungo esce a un volume simile all'ingresso (entro ±6 dB) in studio
     {

@@ -6,8 +6,11 @@
 # di b-rig.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-tool=b-rig/build/BSuiteLogo_artefacts/Release/BSuiteLogo
-[[ -x "$tool" ]] || { echo "manca $tool: compila b-rig (target BSuiteLogo)" >&2; exit 1; }
+tool=""
+for t in b-rig/build/BSuiteLogo_artefacts/Release/BSuiteLogo build*/b-rig/BSuiteLogo_artefacts/Release/BSuiteLogo; do
+    [[ -x "$t" ]] && { tool="$t"; break; }
+done
+[[ -n "$tool" ]] || { echo "manca BSuiteLogo: compila b-rig (target BSuiteLogo)" >&2; exit 1; }
 shots=(
     b-drop/build/b-drop.png
     b-focus/build/gui_bfocus.png
@@ -25,7 +28,7 @@ shots=(
     b-verb/build/b-verb.png
     b-space/build/b-space.png
     b-scenery/build/gui_bscenery.png
-    b-adapt/build/gui_badapt.png
+    b-adapt/build/gui_badapt_off.png
     b-meter/build/gui_bmeter_spec.png
     b-synthesia/build/gui_bsyn_tunnel.png
     b-rig/build/gui_brig_default.png

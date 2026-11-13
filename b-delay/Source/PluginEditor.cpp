@@ -6,7 +6,7 @@ void TapButton::paint (juce::Graphics& g)
     const auto r = getLocalBounds().toFloat();
     if (flash > 0) { g.setColour (accent); g.fillRect (r); }
     else { g.setColour (isMouseOver() ? labelHover : text); outline (g, r); }
-    drawLabel (g, "tap", getLocalBounds(), flash > 0 ? onAccent : (isMouseOver() ? labelHover : selector), kControlTextSize,
+    drawLabel (g, "tap", getLocalBounds(), flash > 0 ? onAccent : (isMouseOver() ? labelHover : selector), kRoomy.title,
                juce::Justification::centred, Face::SansSemiBold);
 }
 
@@ -163,6 +163,7 @@ namespace
         b.step = std::move (st);
         b.drag = [p] (float, float startNorm, float dx) { return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, startNorm + dx * 0.003f)); };
         b.sizeSamples = std::move (sizes);
+        b.setScale (ui::kRoomy);   // numeri ed etichette un poco più grandi, in equilibrio con i valori grandi
     }
 }
 
@@ -211,6 +212,7 @@ BDelayEditor::BDelayEditor (BDelayProcessor& p)
               [] (float v, int d) { return std::round (v * 2.0f + (float) d) / 2.0f; }, { "+12.0 dB", "-24.0 dB" });
     pingpong.bindTo (*prm (BDelayIDs::pingpong));
     trails.bindTo (*prm (BDelayIDs::trails));
+    for (auto* t : { &sync, &pingpong, &trails }) t->textSize = kRoomy.title;
     toneSec.add ("locut", locut, locut.getIdealWidth());
     toneSec.add ("hicut", hicut, hicut.getIdealWidth());
     modSec.add ("depth", mod, mod.getIdealWidth());
@@ -220,7 +222,7 @@ BDelayEditor::BDelayEditor (BDelayProcessor& p)
     stereoSec.add ({}, pingpong, pingpong.getIdealWidth());
     outSec.add ("output", output, output.getIdealWidth());
     outSec.add ({}, trails, trails.getIdealWidth());
-    for (auto* sec : sections) { addAndMakeVisible (*sec); sec->refresh(); }
+    for (auto* sec : sections) { sec->setScale (kRoomy); addAndMakeVisible (*sec); sec->refresh(); }
     addAndMakeVisible (graph);
     tick();
     resized();

@@ -95,9 +95,17 @@ private:
 // stanno subito fuori, alla stessa distanza. Frecce/rotella = un passo,
 // trascinamento orizzontale sul numero = scorrimento continuo.
 // La larghezza segue il testo: quando cambia, onWidthChanged avvisa l'editor.
+// Misure dei controlli. Di base quelle del tema; "kRoomy" (b-verb, b-delay) ha numeri, etichette e riquadri un
+// poco più grandi, per bilanciarli con i valori grandi (BigValue) dello stesso plugin.
+struct ControlScale { int height; float value, unit, label, title; };
+inline constexpr ControlScale kStandard { kControlH, kValueSize, kUnitSize, kLabelSize, kControlTextSize };
+inline constexpr ControlScale kRoomy { 22, 15.0f, 14.0f, 14.0f, 15.0f };
+
 class ValueBox final : public juce::Component
 {
 public:
+    void setScale (const ControlScale& s) { scale = s; cachedSamplesWidth = -1.0f; cachedText.clear(); cachedPad = -1.0f; repaint(); }
+    const ControlScale& getScale() const { return scale; }
     std::function<juce::String (float)> format;                          // valore -> testo
     std::function<float (float value, int dir)> step;                    // un passo di freccia
     std::function<float (float startValue, float startNorm, float dx)> drag;  // valore durante il trascinamento
@@ -144,6 +152,10 @@ private:
     float dragStartValue = 0.0f, dragStartNorm = 0.0f;
     InlineEditor editor;
     juce::Rectangle<int> boxArea() const;
+    ControlScale scale = kStandard;
+    float pad() const;      // padding interno unico (4 lati e frecce), dalla misura del riquadro
+    int arrowGap() const { return juce::roundToInt (pad()); }
+    mutable float cachedPad = -1.0f;
 
     // cache: i contorni dei glifi si ricostruiscono solo quando il testo cambia
     const InkText& inkFor (const juce::String& s) const;
@@ -168,8 +180,8 @@ public:
     std::function<float (float value, int dir)> step;
     juce::StringArray sizeSamples;
     float normPerPixel = 0.004f;
-    static constexpr float kNumberSize = 24.0f, kUnitSize = kValueSize;   // poche misure di testo: 24 e quelle dei box
-    static constexpr int kBoxH = 40, kHeight = 22 + kBoxH;   // etichetta + riquadro
+    static constexpr float kNumberSize = 20.0f, kUnitSize = 14.0f, kLabelSz = 14.0f;   // poche misure di testo: 20, 15 e 14
+    static constexpr int kBoxH = 34, kHeight = 22 + kBoxH;   // etichetta + riquadro
 
     void setParameter (juce::RangedAudioParameter* p) { param = p; repaint(); }
     juce::RangedAudioParameter* getParameter() const { return param; }
@@ -203,6 +215,7 @@ class TextToggle final : public juce::Component
 {
 public:
     explicit TextToggle (juce::String t) : text (std::move (t)) { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+    float textSize = kControlTextSize;
     void bindTo (juce::RangedAudioParameter& p) { param = &p; }
     bool isOn() const { return param != nullptr && param->getValue() > 0.5f; }
     int getIdealWidth() const;
@@ -222,6 +235,7 @@ class Section final : public juce::Component
 {
 public:
     explicit Section (juce::String title, juce::RangedAudioParameter* onOff = nullptr);
+    void setScale (const ControlScale& s) { scale = s; resized(); repaint(); }
     void add (const juce::String& rowLabel, juce::Component& c, int width);
     int getIdealWidth() const;
     int getIdealHeight() const;
@@ -238,6 +252,7 @@ private:
     std::vector<Row> rows;
     bool lastOn = true;
     int labelWidth() const;
+    ControlScale scale = kStandard;
 };
 
 // Dentro b-rig il titolo del plugin non c'è: i controlli della riga in alto (e le aree delle loro etichette)
@@ -260,7 +275,8 @@ inline void centreHeaderInRig (int editorWidth, std::vector<juce::Component*> co
 // e la versione. Un clic ovunque (o Esc) lo chiude. Si aggancia all'editor da solo e ne segue le dimensioni.
 // Aggiornamenti (Updates.h): se c'è una versione più nuova compare un piccolo avviso nell'angolo in basso a
 // destra (un clic apre questo pannello, la x lo chiude) e resta un quadratino nel colore del plugin accanto al
-// logotipo; nel pannello la nuova versione e il tasto "download" che apre la pagina della release.
+// logotipo; nel pannello la nuova versione e il tasto "download" che apre la pagina della release. Senza avvisi,
+// nel pannello c'è "check for updates": chiede subito a GitHub e dice se la versione installata è l'ultima.
 class AboutOverlay final : public juce::Component, private juce::ComponentListener
 {
 public:
@@ -269,6 +285,7 @@ public:
     void show();
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override { repaint(); }   // contorno acceso sul tasto "check for updates"
     bool keyPressed (const juce::KeyPress& k) override { if (k == juce::KeyPress::escapeKey) { setVisible (false); return true; } return false; }
     std::function<juce::Colour()> titleColour;   // facoltativo: colore della "b" (es. b-amp, per canale)
     juce::Point<int> logoAt { 23, 16 };          // angolo del logotipo premibile (b-rig lo ha nella colonna della libreria)
@@ -282,6 +299,14 @@ private:
     void place();
     void setUpdate (const updates::Available&);
     juce::Rectangle<int> downloadArea;   // tasto "download" nel pannello (vuoto se non c'è un aggiornamento)
+    juce::Rectangle<int> checkArea;      // tasto "check for updates" (quando non si sa ancora di una versione nuova)
+    enum class Manual { idle, checking, latest, failed } manual = Manual::idle;
+    std::unique_ptr<updates::ManualCheck> manualCheck;
+    void checkNow();
+public:
+    void checkNowForTest() { checkNow(); }
+    juce::String checkStatusForTest() const;
+private:
     struct Hotspot final : juce::Component
     {
         AboutOverlay& owner;

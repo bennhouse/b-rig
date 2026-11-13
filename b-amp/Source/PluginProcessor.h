@@ -25,13 +25,13 @@ namespace BAmpIDs
     inline constexpr const char* master = "master";
     inline constexpr const char* level = "level";
     inline constexpr const char* boost = "boost";   // off / vol / vol + eq
+    inline constexpr const char* boostTone = "boost_tone";   // tono del boost vol + eq (scuro <-> brillante)
 }
 
-class BAmpProcessor final : public juce::AudioProcessor, private juce::Timer
+class BAmpProcessor final : public juce::AudioProcessor
 {
 public:
     BAmpProcessor();
-    ~BAmpProcessor() override { stopTimer(); }
     void prepareToPlay (double, int) override;
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout&) const override;
@@ -60,11 +60,6 @@ public:
 
     // per l'interfaccia
     std::atomic<float> satEnv { 0.0f }, gateGain { 0.0f }, outRmsDb { -100.0f };
-    // level auto: 3 s di misura solo con DI sopra -55 dBFS
-    void toggleAuto() { autoCmd.store (isAutoListening() ? 2 : 1); }
-    bool isAutoListening() const noexcept { return autoLeft.load() > 0 || autoCmd.load() == 1; }
-    float autoRemaining() const noexcept { return (float) autoLeft.load() / (float) fs; }
-    bool applyAutoIfReady();
     // tuner: DI < 500 Hz decimata 8x in un FIFO; mute mentre si accorda
     static constexpr int kTunerFifo = 1 << 14;
     juce::AbstractFifo tunerFifo { kTunerFifo };
@@ -73,19 +68,23 @@ public:
     double tunerRate() const noexcept { return fs / 8.0; }
     // tone stack per il grafico/test
     float toneStackDb (double hz) const;
-    // ogni testata ricorda i suoi controlli (tutti tranne gate, boost e level) finché il plugin resta aperto
+    // ogni testata ha tutti i suoi controlli (gate, boost e tone, level e oversampling compresi): si salvano con il
+    // progetto, così cambiando testata tornano i suoi
     ui::PresetMemory headMemory;
     static float headDefault (const char* id, int ch);
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    void timerCallback() override { applyAutoIfReady(); }
     void configureChannel (int ch, float tight) noexcept;
     void resetChannelState() noexcept;
     static float stageDrive (int ch, int k, float gain01) noexcept;
+    static int osFromParam (float) noexcept;   // 0 = spento (1x), 1 = 2x, 2 = 4x
+    float osLatency() const noexcept;
+    void setBoostTone (float t01) noexcept;
 
     std::atomic<float>* p[12] {};
-    std::atomic<float>* pGateOn = nullptr, *pBoost = nullptr;
+    std::atomic<float>* pGateOn = nullptr, *pBoost = nullptr, *pBoostTone = nullptr;
+    float lastBoostTone = -1.0f;
     double fs = 48000.0;
     int curChannel = -1, osFactor = 2, lastOs = -1; float lastTight = -1;
     juce::dsp::Oversampling<float> os2 { 1, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true };
@@ -113,8 +112,6 @@ private:
     float chanRamp = 1.0f, rampStep = 0; int pendingChannel = -1; bool rampHold = false;
     // livelli
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> masterSm { 1.0f }, levelSm { 1.0f };
-    float autoG = 1.0f; double accIn = 0, accOut = 0; int accN = 0;
-    std::atomic<int> autoCmd { 0 }, autoLeft { 0 }; std::atomic<bool> autoReady { false }; std::atomic<float> autoResult { 0.0f };
     float muteG = 1.0f;
     // boost davanti all'ampli: guadagno e quota della catena EQ + drive, entrambi con rampa (nessun click)
     juce::SmoothedValue<float> boostGainSm { 1.0f }, boostEqSm { 0.0f };

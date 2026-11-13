@@ -1,6 +1,6 @@
 // Test di b-drop: intonazione (-2, -12, +7 st, fine), ritardo, zero-lag pick, accordi senza tremolio,
 // tension, spento = identico, CPU, snapshot.
-#include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include "smp/TestKit.h"
 
 namespace
@@ -158,6 +158,18 @@ int main()
         setP (p->apvts, BDropIDs::semitones, -5.0f);
         run (*p, 24000, [] (int i) { return pluck (i, 110.0, 0.25); });
         snapshot (*p, "b-drop.png");
+        // rullo: doppio clic = 0 e il numero si scrive da tastiera
+        std::unique_ptr<juce::AudioProcessorEditor> ed (p->createEditor());
+        DropDisplay* disp = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c) { for (auto* k : c.getChildren()) { if (auto* d = dynamic_cast<DropDisplay*> (k)) disp = d; else find (*k); } };
+        find (*ed);
+        auto* s = p->apvts.getParameter (BDropIDs::semitones);
+        if (disp != nullptr) disp->typeValueForTest ("-7");
+        check (disp != nullptr && std::abs (s->convertFrom0to1 (s->getValue()) + 7.0f) < 0.01f, "rullo: -7 scritto da tastiera", s->convertFrom0to1 (s->getValue()));
+        if (disp != nullptr) disp->typeValueForTest ("+3");
+        check (std::abs (s->convertFrom0to1 (s->getValue()) - 3.0f) < 0.01f, "rullo: +3 scritto da tastiera", s->convertFrom0to1 (s->getValue()));
+        p->editorBeingDeleted (ed.get());
+        ed.reset();
     }
     return finish();
 }

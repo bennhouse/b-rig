@@ -88,7 +88,11 @@ void RoomPlan::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const int item = itemAt (e.position);
     if (item == 0) return;
-    for (auto* id : item == 1 ? std::array<const char*, 2> { BSpaceIDs::srcX, BSpaceIDs::srcY } : std::array<const char*, 2> { BSpaceIDs::lisX, BSpaceIDs::lisY })
+    // l'ampli torna al suo posto e dritto verso l'ascoltatore; l'ascoltatore al suo posto
+    std::vector<const char*> ids;
+    if (item == 1) ids = { BSpaceIDs::srcX, BSpaceIDs::srcY, BSpaceIDs::angle };
+    else ids = { BSpaceIDs::lisX, BSpaceIDs::lisY };
+    for (auto* id : ids)
     {
         auto* p = proc.apvts.getParameter (id);
         p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture();
@@ -184,6 +188,9 @@ void RoomPlan::paint (juce::Graphics& g)
 
     const float tagH = capHeight (kTagSize, Face::SansSemiBold);
     drawTag (g, "front", r.getCentreX(), r.getY() - 8.0f, juce::Justification::horizontallyCentred);
+    // i materiali della stanza scelta
+    drawAtBaseline (g, BSpaceProcessor::kRooms[prm.room].material, all.getRight() - 10.0f, all.getY() + 8.0f + tagH, info, kInfoSize,
+                    juce::Justification::right, Face::SansRegular);
     drawAtBaseline (g, "drag the amp and the listener, scroll on the amp to turn it, double-click to reset", all.getX() + 10.0f, all.getY() + 8.0f + tagH, info, kInfoSize,
                     juce::Justification::left, Face::SansRegular);
     const float base = all.getBottom() - 10.0f;
@@ -199,11 +206,13 @@ BSpaceEditor::BSpaceEditor (BSpaceProcessor& p)
     : ShellEditor (p, p.apvts, "space", 960, 600), plan (p)
 {
     using namespace ui;
-    setHeaderChoice ("space", BSpaceIDs::space, { "studio", "garage", "club", "hall" });
-    headerChoice->onUserChange = [&p] (int seg) { p.applySpace (seg); };
-    addChoice ("walls", BSpaceIDs::walls, { "treated", "wood", "brick", "concrete" });
+    // la stanza: misure e materiali insieme
+    setHeaderChoice ("room", BSpaceIDs::room, { "studio", "live", "garage", "club", "hall", "church" });
+    headerChoice->onUserChange = [&p] (int seg) { p.applyRoom (seg); };
     addChoice ("source", BSpaceIDs::source, { "cab 4x12", "combo", "omni" });
     addCheck ("dist comp", BSpaceIDs::distComp);
+    addValue ("mix", BSpaceIDs::mix, [] (float v) { return juce::String (juce::roundToInt (v)) + " %"; },
+              [] (float v, int d) { return std::round (v) + 5.0f * (float) d; }, { "100 %" });
     newRow();
     auto metres = [] (float v) { return num (v, 1) + " m"; };
     auto metreStep = [] (float v, int d) { return std::round (v * 2.0f + (float) d) / 2.0f; };

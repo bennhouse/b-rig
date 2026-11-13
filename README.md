@@ -12,16 +12,18 @@ Its installer can also add **the same effects as plugins** for your DAW: you cho
 
 1. Download `b-rig-<version>-macos-arm64.dmg` from the [latest release](https://github.com/bennhouse/b-rig/releases/latest) (macOS 11 or later, Apple Silicon).
 2. Open it and double-click **Install b-rig**. The installer is not notarized yet, so the first time macOS blocks it: open **System Settings → Privacy & Security** and click **Open Anyway**, then open it again.
-3. On the **Installation Type** page b-rig is always selected. Under **Plugins for your DAW**, tick the plugins you want and, for each one, **Audio Unit** (Logic Pro, GarageBand), **VST3** (Ableton Live, Reaper, Cubase…) or both. Leave them all unticked for the app only.
+3. On the **Installation Type** page b-rig is always selected. **Plugin formats** chooses **Audio Unit** (Logic Pro, GarageBand), **VST3** (Ableton Live, Reaper, Cubase…) or both, for every plugin. **Plugins for your DAW** ticks all the plugins at once; open it to tick only some. Leave it unticked for the app only.
+4. b-rig includes no cab IRs. To hear b-amp, add b-blend after it and load your own IR files (`.wav`); until then b-amp stays muted. The app says this the first time it opens.
 
 The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where your DAW lists them under "b-suite". Run the installer again to add or remove plugins. A Windows version is in the works.
 
 ## The app
 
-- **The chain:** drag modules from the library into the chain and reorder them. Each module is one of the plugins below, with the same sound and interface, at most once in the chain.
+- **The chain:** drag modules from the library into the chain and reorder them. Each module is one of the plugins below, with the same sound and interface, at most once in the chain. It starts empty.
+- **Split:** divide the chain into two parallel lanes with different modules (two amps, a delay on one side and a reverb on the other), from any point, without making the chain bar any wider. The lanes play left and right (`stereo`), and `widen` delays one of them by the time that measures best for a wide sound that still holds up in mono.
 - **Safe by design:** b-amp stays muted until there is a cab after it, so a raw amp never blasts into your headphones, and a limiter protects the output.
-- **Tuner, metronome, presets** with colours, rename, import and export, **undo / redo** for every change, and audio settings kept between sessions.
-- **Updates:** once a day b-rig and the plugins check for a new release; a small notice in the corner opens the download.
+- **Tuner, metronome, presets** with colours, rename, import and export, **undo / redo** for every change, and audio settings kept between sessions. Presets live outside the app, so updates never touch them.
+- **Updates:** once a day b-rig and the plugins check for a new release; a small notice in the corner opens the download. The about panel (click the name) also has `check for updates`.
 
 More in [b-rig/README.md](b-rig/README.md).
 
@@ -38,7 +40,7 @@ The effects of the chain. 16 of them are modules of the app; b-double, b-scenery
 
 ### Amp, cab and effects
 
-- **b-amp**: an amp head with three channels: clean, crunch and a lead that goes all the way to djent. Noise gate and tuner built in. Click the pilot light to look at the back.
+- **b-amp**: an amp head with three channels: clean, crunch and a lead that goes all the way to djent. Each head keeps all its own settings. Noise gate, boost with tone, and tuner built in. Click the pilot light to look at the back.
 - **b-distort**: five distortions (tube, drive, rat, fuzz, fold) matched in loudness, so you compare the sound, not the volume.
 - **b-wire**: follows your notes and plays them back as a raw synth one or two octaves down.
 - **b-starve**: a circuit running out of power, then three glitch effects: freezes, bit errors and a melting filter.
@@ -49,7 +51,7 @@ The effects of the chain. 16 of them are modules of the app; b-double, b-scenery
 - **b-double** (DAW only): turns one take into two guitars, wide in stereo and still fine in mono.
 - **b-aftercab**: everything after the cab in one place: EQ, compressor, delay and reverb, and an output that keeps the level where it was.
 - **b-dynaverb**: notices when you play a lead line on the high strings and only then adds a mid boost and a delay. Riffs stay dry.
-- **b-space**: puts the amp in a real room. You pick the room, the walls and where the amp and you are standing, instead of turning reverb knobs.
+- **b-space**: puts the amp in a real room. You pick the room (its size and materials come with it) and where the amp and you are standing, instead of turning reverb knobs, and mix how much of the room you hear.
 - **b-delay**: five kinds of repeats (digital, tape, bucket brigade, lo-fi, reverse), tempo sync and tap.
 - **b-verb**: room, plate, hall, spring and shimmer, with freeze.
 - **b-scenery** (DAW only): vinyl crackle, amp hum and rain, generated live, that duck under your playing so they never get in the way.

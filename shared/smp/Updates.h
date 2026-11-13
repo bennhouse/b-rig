@@ -69,11 +69,11 @@ inline juce::var latestPerProduct (const juce::var& releases)
     return juce::var (out);
 }
 
-struct Available { juce::String version, url; };
+struct Available { juce::String version, url; bool reached = false; };   // reached: risposta di GitHub (o cache fresca)
 
-// Su un thread a parte (mai sul thread dei messaggi né su quello audio): legge la cache o, se è vecchia,
-// interroga GitHub. shouldExit interrompe il download (chiusura dell'editor).
-inline Available check (const juce::String& product, const juce::String& current, std::function<bool()> shouldExit)
+// Su un thread a parte (mai sul thread dei messaggi né su quello audio): legge la cache o, se è vecchia (o se
+// force: il tasto "check for updates"), interroga GitHub. shouldExit interrompe il download (chiusura dell'editor).
+inline Available check (const juce::String& product, const juce::String& current, std::function<bool()> shouldExit, bool force = false)
 {
     if (juce::String (kUpdateRepo).isEmpty() || current.isEmpty()) return {};
     juce::PropertiesFile::Options o;
@@ -88,8 +88,10 @@ inline Available check (const juce::String& product, const juce::String& current
     const auto now = juce::Time::currentTimeMillis();
     auto latest = juce::JSON::parse (cache.getValue ("latest"));
     const auto checkedAt = cache.getValue ("checkedAt").getLargeIntValue();
-    if (! latest.isObject() || now - checkedAt > kCheckEveryMs || now < checkedAt)
+    bool reached = latest.isObject();
+    if (force || ! latest.isObject() || now - checkedAt > kCheckEveryMs || now < checkedAt)
     {
+        reached = false;
         const juce::URL url ("https://api.github.com/repos/" + juce::String (kUpdateRepo) + "/releases?per_page=100");
         int status = 0;
         auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
@@ -101,6 +103,7 @@ inline Available check (const juce::String& product, const juce::String& current
         {
             latest = latestPerProduct (juce::JSON::parse (stream->readEntireStreamAsString()));
             cache.setValue ("latest", juce::JSON::toString (latest, true));
+            reached = true;
         }
         // anche se fallisce (repo privato, offline) si riprova solo domani: niente richieste a ogni apertura
         cache.setValue ("checkedAt", juce::String (now));
@@ -108,9 +111,32 @@ inline Available check (const juce::String& product, const juce::String& current
     }
     const auto e = latest[juce::Identifier (product)];
     if (e.isObject() && compareVersions (e["version"].toString(), current) > 0)
-        return { e["version"].toString(), e["url"].toString() };
-    return {};
+        return { e["version"].toString(), e["url"].toString(), true };
+    return { {}, {}, reached };
 }
+
+// Il tasto "check for updates" del pannello about: chiede subito a GitHub (senza aspettare le 24 ore) e richiama
+// done sul thread dei messaggi sempre, anche se non c'è niente di nuovo o GitHub non risponde.
+class ManualCheck final : private juce::Thread
+{
+public:
+    ManualCheck (juce::Component& c, juce::String productName, std::function<void (const Available&)> doneFn)
+        : juce::Thread ("b-suite manual update check"), comp (c), product (std::move (productName)), done (std::move (doneFn)) {}
+    ~ManualCheck() override { signalThreadShouldExit(); stopThread (6000); }
+    bool start() { if (isThreadRunning()) return false; return startThread (juce::Thread::Priority::low); }
+private:
+    void run() override
+    {
+        const auto a = check (product, currentVersion(), [this] { return threadShouldExit(); }, true);
+        if (threadShouldExit()) return;
+        juce::Component::SafePointer<juce::Component> safe (&comp);
+        auto cb = done;
+        juce::MessageManager::callAsync ([safe, cb, a] { if (safe != nullptr && cb) cb (a); });
+    }
+    juce::Component& comp;
+    juce::String product;
+    std::function<void (const Available&)> done;
+};
 
 // Avvia il controllo quando la finestra è davvero sullo schermo (non nei test, non negli snapshot) e
 // richiama onFound sul thread dei messaggi se c'è una versione più nuova. Si ferma da solo alla distruzione.

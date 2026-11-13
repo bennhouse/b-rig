@@ -1,6 +1,11 @@
 #!/bin/bash
-# Installer macOS di b-rig (.pkg): l'app in /Applications (sempre) e, a scelta, i plugin per la DAW: per ognuno
-# Audio Unit e/o VST3, in /Library/Audio/Plug-Ins. La pagina "Tipo di installazione" si apre da sola con l'elenco.
+# Installer macOS di b-rig (.pkg): l'app in /Applications (sempre) e, a scelta, i plugin per la DAW in
+# /Library/Audio/Plug-Ins. La pagina "Tipo di installazione" si apre da sola con tre voci separate:
+#   b-rig                       l'app (sempre installata)
+#   Plugin formats              Audio Unit, VST3: valgono per tutti i plugin scelti
+#   Plugins for your DAW        la voce spunta o toglie tutti i plugin; sotto, i singoli plugin
+# Per ogni plugin e formato c'è una scelta nascosta che si accende da sola quando sono accesi sia il plugin sia il
+# formato (espressione "selected" valutata dall'Installer a ogni clic).
 # Sfondo chiaro e scuro con il logotipo e i colori dei plugin (tools/installer/resources, generati da BSuiteLogo).
 #   make-pkg.sh <cartella di build della radice> <versione> <cartella di uscita>
 set -euo pipefail
@@ -25,7 +30,7 @@ app="$build/b-rig/BRig_artefacts/Release/b-rig.app"
 [[ -d "$app" ]] || { echo "manca $app" >&2; exit 1; }
 pack "$app" /Applications com.bsuite.brig.app b-rig-app.pkg
 refs="<pkg-ref id=\"com.bsuite.brig.app\" version=\"$version\">b-rig-app.pkg</pkg-ref>"
-outline=""; choices=""
+pluginLines=""; hiddenLines=""; choices=""
 
 # una riga di descrizione per plugin, presa dall'elenco del README ("- **b-amp**: an amp head ...")
 describe () { python3 - "$root/README.md" "$1" <<'PY'
@@ -51,10 +56,12 @@ while read -r dir target; do
     pack "$art/AU/$dir.component" /Library/Audio/Plug-Ins/Components "$id.au" "$dir-au.pkg"
     pack "$art/VST3/$dir.vst3" /Library/Audio/Plug-Ins/VST3 "$id.vst3" "$dir-vst3.pkg"
     desc="$(describe "$dir")"
-    outline+="<line choice=\"$dir\"><line choice=\"$dir.au\"/><line choice=\"$dir.vst3\"/></line>"
+    pluginLines+="<line choice=\"$dir\"/>"
+    hiddenLines+="<line choice=\"$dir.au\"/><line choice=\"$dir.vst3\"/>"
     choices+="<choice id=\"$dir\" title=\"$dir\" description=\"$desc\" start_selected=\"false\"/>"
-    choices+="<choice id=\"$dir.au\" title=\"Audio Unit\" description=\"$dir for Logic Pro, GarageBand and the other Audio Unit hosts.\" start_selected=\"false\"><pkg-ref id=\"$id.au\"/></choice>"
-    choices+="<choice id=\"$dir.vst3\" title=\"VST3\" description=\"$dir for Ableton Live, Reaper, Cubase, Studio One and the other VST3 hosts.\" start_selected=\"false\"><pkg-ref id=\"$id.vst3\"/></choice>"
+    # nascoste: si installano quando sono accesi il plugin e il formato
+    choices+="<choice id=\"$dir.au\" title=\"$dir Audio Unit\" visible=\"false\" start_selected=\"false\" selected=\"choices['$dir'].selected &amp;&amp; choices['fmt.au'].selected\"><pkg-ref id=\"$id.au\"/></choice>"
+    choices+="<choice id=\"$dir.vst3\" title=\"$dir VST3\" visible=\"false\" start_selected=\"false\" selected=\"choices['$dir'].selected &amp;&amp; choices['fmt.vst3'].selected\"><pkg-ref id=\"$id.vst3\"/></choice>"
     refs+="<pkg-ref id=\"$id.au\" version=\"$version\">$dir-au.pkg</pkg-ref><pkg-ref id=\"$id.vst3\" version=\"$version\">$dir-vst3.pkg</pkg-ref>"
     echo "  $dir"
 done < "$root/tools/installer/plugins.txt"
@@ -73,10 +80,15 @@ cat > "$work/distribution.xml" <<XML
     <domains enable_localSystem="true"/>
     <choices-outline>
         <line choice="app"/>
-        <line choice="plugins">$outline</line>
+        <line choice="formats"><line choice="fmt.au"/><line choice="fmt.vst3"/></line>
+        <line choice="plugins">$pluginLines</line>
+        $hiddenLines
     </choices-outline>
     <choice id="app" title="b-rig" description="The app: the whole chain in one window, with tuner, metronome and presets. Always installed, in Applications." enabled="false" start_selected="true"><pkg-ref id="com.bsuite.brig.app"/></choice>
-    <choice id="plugins" title="Plugins for your DAW" description="The same effects as separate plugins for your music software. Tick the ones you want, as Audio Unit, VST3 or both." start_selected="false"/>
+    <choice id="formats" title="Plugin formats" description="The formats of the plugins you pick below. They apply to all of them." start_selected="true"/>
+    <choice id="fmt.au" title="Audio Unit" description="For Logic Pro, GarageBand and the other Audio Unit hosts." start_selected="true"/>
+    <choice id="fmt.vst3" title="VST3" description="For Ableton Live, Reaper, Cubase, Studio One and the other VST3 hosts." start_selected="true"/>
+    <choice id="plugins" title="Plugins for your DAW" description="The same effects as separate plugins for your music software. Tick this line for all of them, or open it and tick the ones you want." start_selected="false"/>
     $choices
     $refs
 </installer-gui-script>
@@ -95,7 +107,7 @@ cat > "$work/res/welcome.html" <<HTML
 <img src="$icon" width="72" height="72" alt="" style="float:left;margin:2px 18px 8px 0">
 <h1><b>b</b><span>-</span>rig $version</h1>
 <p>A guitar rig in one app: plug in the guitar and play through amp, cab and effects, with tuner, metronome and presets. No DAW needed.</p>
-<p>On the next pages you can also install <b>the plugins</b> for your DAW: choose which ones, and whether you want them as <b>Audio Unit</b>, <b>VST3</b> or both. The app is always installed.</p>
+<p>On the next pages you can also install <b>the plugins</b> for your DAW: first the formats (<b>Audio Unit</b>, <b>VST3</b> or both), then all the plugins or only the ones you want. The app is always installed.</p>
 <p class="dim">Beta. Free and open source under the GNU AGPLv3.</p>
 </body></html>
 HTML

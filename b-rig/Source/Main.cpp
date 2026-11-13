@@ -59,7 +59,7 @@ public:
         o.osxLibrarySubFolder = "Application Support";
         props = std::make_unique<juce::PropertiesFile> (o);
 
-        // il preset scelto per l'avvio (all'inizio "default", che contiene la catena di fabbrica), prima di aprire l'audio
+        // il preset scelto per l'avvio (all'inizio "clean slate", la catena vuota), prima di aprire l'audio
         rig::RigComponent::loadStartup (engine);
         engine.diChannel = props->getIntValue ("di", 0);
         // metronomo: acceso/spento, suono e volume restano uguali da una sessione all'altra
@@ -83,6 +83,14 @@ public:
             }
         deviceManager.addAudioCallback (&audio);
         window = std::make_unique<MainWindow> (engine, deviceManager);
+        // primo avvio: una finestra spiega che b-rig non contiene IR di casse (si vede una volta sola)
+        if (! props->getBoolValue ("welcomeShown", false))
+            if (auto* rc = dynamic_cast<rig::RigComponent*> (window->getContentComponent()))
+            {
+                rc->showWelcome();
+                props->setValue ("welcomeShown", true);
+                props->saveIfNeeded();
+            }
     }
 
     void shutdown() override

@@ -111,7 +111,7 @@ int main()
         const double lowDb = 20 * std::log10 (rms (y, 0, 24000, 48000) / (0.1 / std::sqrt (2.0)) + 1e-9);
         check (lowDb < -20.0 && std::abs (rms (y, 0, 24000, 48000) - rms (y, 1, 24000, 48000)) < 1e-6, "monitor phone: mono e taglio dei bassi", lowDb);
     }
-    // 6. CPU e snapshot (monitor acceso: avviso visibile)
+    // 6. CPU e snapshot (monitor acceso: avviso visibile; poi spento, per le immagini del repository)
     {
         auto p = std::make_unique<BAdaptProcessor>(); p->setRateAndBufferSizeDetails (sr, 128); p->prepareToPlay (sr, 128);
         setP (p->apvts, BAdaptIDs::thump, 50); setP (p->apvts, BAdaptIDs::deharsh, 50);
@@ -128,6 +128,13 @@ int main()
         auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f);
         auto f = juce::File::getCurrentWorkingDirectory().getChildFile ("build/gui_badapt.png"); f.deleteFile();
         juce::FileOutputStream os (f); check (os.openedOk() && juce::PNGImageFormat().writeImageToStream (img, os), "gui_badapt.png");
+        // la stessa schermata con il monitor spento (quella delle immagini del repository)
+        setP (q.apvts, BAdaptIDs::monitor, 0);
+        run (q, 48000, [&] (int i) { const float v = 0.3f * (float) std::sin (tp * 3400.0 * i / sr); return std::pair<float, float> { v, 0.5f * v }; });
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        auto img2 = ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f);
+        auto f2 = juce::File::getCurrentWorkingDirectory().getChildFile ("build/gui_badapt_off.png"); f2.deleteFile();
+        juce::FileOutputStream os2 (f2); check (os2.openedOk() && juce::PNGImageFormat().writeImageToStream (img2, os2), "gui_badapt_off.png");
         ed.reset();
     }
     std::printf ("\n%s (%d falliti)\n", failures == 0 ? "TUTTI I TEST PASSATI" : "CI SONO TEST FALLITI", failures);

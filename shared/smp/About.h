@@ -39,7 +39,7 @@ inline juce::String aboutText (const juce::String& name)
                        "passes at zero latency while the shifted note follows a few milliseconds later." },
         { "freshstrings", "New strings, a different pick and another pickup position on the clean DI: brightness only on "
                        "the attack, pick material, string gauge and pickup resonance, at zero latency." },
-        { "space",     "Puts the amp in a room from its geometry: room size and walls, amp type, where the amp and the "
+        { "space",     "Puts the amp in a room from its geometry: the room and its materials, amp type, where the amp and the "
                        "listener stand and where the amp points. No reverb knobs, zero latency on the direct sound." },
         { "dynaverb",  "Hears when you play lead lines on the high strings and only then adds a mid boost and a stereo "
                        "delay. Riffs on the low strings pass untouched." },
