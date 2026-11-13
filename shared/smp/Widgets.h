@@ -301,8 +301,8 @@ private:
     } toast { *this };
     juce::Component& ed;
     juce::String name, text, logoText;
-    // prodotto che si aggiorna: b-rig da sé, i plugin tutti insieme con l'installer della suite
-    juce::String product() const { return name == "rig" ? juce::String ("b-rig") : juce::String ("b-suite"); }
+    // prodotto che si aggiorna: uno solo, b-rig (i plugin arrivano con il suo installer e hanno la sua versione)
+    juce::String product() const { return "b-rig"; }
     updates::Available update;
     std::unique_ptr<updates::Watcher> watcher;
 };

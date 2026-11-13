@@ -1,6 +1,6 @@
-b-rig, the b-suite as a standalone app.
+b-rig, a guitar rig in one app, with its plugins for your DAW if you want them.
 
-- **macOS (Apple Silicon)**: open the .dmg and drag b-rig to Applications. The app is not notarized: the first time, macOS blocks it. Open System Settings > Privacy & Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/b-rig.app`).
-- **Windows x64 / ARM64**: run the setup for your machine. Windows SmartScreen may warn that the publisher is unknown: click "More info" > "Run anyway".
+- **macOS (Apple Silicon, macOS 11 or later)**: open the `.dmg`, then double-click "Install b-rig". The first time macOS blocks it because it is not notarized: open System Settings > Privacy & Security and click "Open Anyway". On the "Installation Type" page the app is always selected; under "Plugins for your DAW" tick the plugins you want, as Audio Unit, VST3 or both. The app goes to Applications, the plugins to /Library/Audio/Plug-Ins.
+- **Windows**: in the works.
 
 Free software under the GNU AGPLv3.

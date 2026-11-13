@@ -1,9 +1,10 @@
-# Tutti i plugin della b-suite in una sola build (la usa l'installer della suite; comoda anche in locale):
-#   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target bsuite_plugins
-# Ogni plugin si compila anche da solo dalla sua cartella. b-rig ha la sua build in b-rig/.
+# b-rig e tutti i plugin in una sola build (la usa l'installer; comoda anche in locale):
+#   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target brig_release
+# brig_release = l'app + i plugin che l'installer può aggiungere; bsuite_tests = i programmi di test.
+# App e plugin si compilano anche ognuno dalla sua cartella.
 cmake_minimum_required(VERSION 3.22)
 include("${CMAKE_CURRENT_LIST_DIR}/shared/cmake/Suite.cmake")
-project(BSuite VERSION ${BSUITE_VERSION} LANGUAGES C CXX)
+project(BRigProject VERSION ${BSUITE_VERSION} LANGUAGES C CXX)
 bsuite_setup()
 
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/tools/installer/plugins.txt" BSUITE_LINES REGEX "^b-")
@@ -23,3 +24,12 @@ foreach(line IN LISTS BSUITE_LINES)
         set_target_properties(${target}Tests PROPERTIES OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
     endif()
 endforeach()
+
+# l'app
+add_subdirectory(b-rig)
+add_dependencies(bsuite_tests BRigTests)
+if(APPLE)
+    set_target_properties(BRigTests PROPERTIES OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+endif()
+add_custom_target(brig_release)
+add_dependencies(brig_release BRig bsuite_plugins)

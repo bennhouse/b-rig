@@ -1,23 +1,33 @@
-<p align="center"><img src="docs/b-suite-banner.svg" alt="b-suite" width="760"></p>
+<p align="center"><img src="docs/b-rig-banner.svg" alt="b-rig" width="760"></p>
 
-Free and open-source plugins (VST3 / AU) and a standalone app for recording electric guitar: from the raw DI to a mix that still holds up on a phone speaker.
+**b-rig** is a free and open-source guitar rig in one app. Plug in the guitar and play through tuner, amp, cab and effects, with presets and a metronome. No DAW needed.
 
-Use them, study them, change them, ship your own versions. Everything is here: the DSP, the interfaces, the shared design system, the tests and the installer scripts.
+Its installer can also add **the same effects as plugins** for your DAW: you choose which ones, and whether you want them as Audio Unit, VST3 or both.
 
-**License:** [GNU AGPLv3](LICENSE) · **Status:** beta
+**License:** [GNU AGPLv3](LICENSE) · **Status:** beta · **Download:** [latest release](https://github.com/bennhouse/b-rig/releases)
 
-## What you get
+<p align="center"><img src="docs/b-rig-showcase.png" alt="b-rig and its plugins" width="100%"></p>
 
-- 19 plugins and a standalone app that runs them without a DAW.
-- Each plugin does one job and shows what it is doing on a live display. No fake knobs or screws: dark, flat, one colour per plugin.
-- Readable code: one folder per plugin, a short `README.md` with every control and the numbers measured by its tests.
-- A shared design system in `shared/smp` (fonts, colours, controls, window layout), so a new plugin looks like the rest from the first build.
+## Install
 
-The code was written with Claude Code, and so can your changes: the repository is laid out so that a person or an AI assistant can find their way around quickly.
+1. Download `b-rig-<version>-macos-arm64.dmg` from the [releases page](https://github.com/bennhouse/b-rig/releases) (macOS 11 or later, Apple Silicon).
+2. Open it and double-click **Install b-rig**. The installer is not notarized yet, so the first time macOS blocks it: open **System Settings → Privacy & Security** and click **Open Anyway**, then open it again.
+3. On the **Installation Type** page b-rig is always selected. Under **Plugins for your DAW**, tick the plugins you want and, for each one, **Audio Unit** (Logic Pro, GarageBand), **VST3** (Ableton Live, Reaper, Cubase…) or both. Leave them all unticked for the app only.
 
-<p align="center"><img src="docs/b-suite-showcase-all.png" alt="All the b-suite plugins" width="100%"></p>
+The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where your DAW lists them under "b-suite". Run the installer again to add or remove plugins. A Windows version is in the works.
+
+## The app
+
+- **The chain:** drag modules from the library into the chain and reorder them. Each module is one of the plugins below, with the same sound and interface, at most once in the chain.
+- **Safe by design:** b-amp stays muted until there is a cab after it, so a raw amp never blasts into your headphones, and a limiter protects the output.
+- **Tuner, metronome, presets** with colours, rename, import and export, **undo / redo** for every change, and audio settings kept between sessions.
+- **Updates:** once a day b-rig and the plugins check for a new release; a small notice in the corner opens the download.
+
+More in [b-rig/README.md](b-rig/README.md).
 
 ## The plugins
+
+The effects of the chain. 16 of them are modules of the app; b-double, b-scenery and b-synthesia are for the DAW only. In a DAW you install the ones you pick in the installer.
 
 ### Before the amp
 
@@ -36,31 +46,25 @@ The code was written with Claude Code, and so can your changes: the repository i
 
 ### After the cab
 
-- **b-double**: turns one take into two guitars, wide in stereo and still fine in mono.
+- **b-double** (DAW only): turns one take into two guitars, wide in stereo and still fine in mono.
 - **b-aftercab**: everything after the cab in one place: EQ, compressor, delay and reverb, and an output that keeps the level where it was.
 - **b-dynaverb**: notices when you play a lead line on the high strings and only then adds a mid boost and a delay. Riffs stay dry.
 - **b-space**: puts the amp in a real room. You pick the room, the walls and where the amp and you are standing, instead of turning reverb knobs.
 - **b-delay**: five kinds of repeats (digital, tape, bucket brigade, lo-fi, reverse), tempo sync and tap.
 - **b-verb**: room, plate, hall, spring and shimmer, with freeze.
-- **b-scenery**: vinyl crackle, amp hum and rain, generated live, that duck under your playing so they never get in the way.
+- **b-scenery** (DAW only): vinyl crackle, amp hum and rain, generated live, that duck under your playing so they never get in the way.
 
 ### On the master
 
 - **b-adapt**: makes the mix survive phone speakers and social media compression. A phone monitor lets you hear how it will sound there (switch it off before you export).
 - **b-meter**: the last slot. Spectrum, stereo and loudness, and one click to hit the level Instagram, YouTube or a streaming release expects.
-- **b-synthesia**: visuals that move with the guitar, for playthrough videos. The audio isn't touched.
+- **b-synthesia** (DAW only): visuals that move with the guitar, for playthrough videos. The audio isn't touched.
 
-Every plugin folder has its own `README.md` with every control and the numbers measured in the tests.
+Each plugin folder has its own `README.md` with every control and the numbers measured by its tests.
 
-## b-rig
+<p align="center"><img src="docs/b-rig-plugins.png" alt="All the plugins" width="100%"></p>
 
-The whole suite as one app: plug in the guitar and play, no DAW. Tuner, metronome, presets and undo. b-amp stays quiet until there's a cab after it, and a limiter protects the output.
-
-Installers for macOS (Apple Silicon) and Windows (x64 and ARM). More in `b-rig/README.md`.
-
-## Suggested order
-
-On the guitar track:
+### Suggested order in a DAW
 
 ```text
 DI → b-drop → b-focus → b-fs → b-tight → (b-wire / b-starve / b-distort)
@@ -68,43 +72,34 @@ DI → b-drop → b-focus → b-fs → b-tight → (b-wire / b-starve / b-distor
    → b-delay / b-verb → b-space → b-scenery
 ```
 
-On the master: `b-adapt → b-meter`, with b-synthesia wherever you like.
+On the master: `b-adapt → b-meter`, with b-synthesia wherever you like. Everything in brackets, and everything after b-aftercab, is optional.
 
-Everything in brackets, and everything after b-aftercab, is optional.
-
-## Build
+## Build from source
 
 JUCE 9 and C++20, built with CMake. JUCE is a submodule, so clone with `--recursive` (or run `git submodule update --init`).
 
 ```bash
-cd b-aftercab        # or any plugin folder, or b-rig
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+cmake --build build --target brig_release
 ```
 
-On macOS the plugins are copied to `~/Library/Audio/Plug-Ins` after the build and show up in Logic Pro under "b-suite". Each folder also builds a test program that measures the sound and saves screenshots of the interface.
+That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`) and every plugin. The app and each plugin also build on their own from their folder, and each one has a test program that measures the sound and saves screenshots of the interface.
 
 ## Make it yours
 
-- **Change a plugin:** edit its `Source/`, rebuild, run its test program. The tests measure the sound (levels, timing, decay, CPU) and save screenshots of the interface to `build/`.
-- **Make a new plugin:** copy a small one (b-tight, b-verb) and rename it. `shared/smp/Shell.h` gives you the title, the frame, the value boxes and the about panel; `shared/smp/Filters.h` the common filters.
+- **Change a plugin:** edit its `Source/`, rebuild, run its test program.
+- **Make a new plugin:** copy a small one (b-tight, b-verb) and rename it. `shared/smp` has the design system: title, frame, value boxes, about panel, common filters.
 - **Put it in b-rig:** add `b-rig/Source/Modules/Mod_<name>.cpp` like the others and an entry in `Modules.cpp`. b-rig builds every module from the plugin's own sources, so a plugin change reaches the app at the next build.
 - **Contribute back:** issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) explains how. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
-- **On Windows:** [docs/WINDOWS.md](docs/WINDOWS.md) lists the tools to install and how to build, test and make the Windows installers.
+
+## Releases
+
+One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (pre-releases during the beta). On a Mac, `tools/release.sh 0.2.0` sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
 
 ## License
 
-b-suite is free software under the [GNU Affero General Public License v3](LICENSE): you can use it, modify it and redistribute it, also commercially, as long as what you distribute stays under the same license with its source available. JUCE is used under its AGPLv3 option. The IBM Plex fonts are under the SIL Open Font License (`shared/Resources/OFL-IBMPlex.txt`).
-
-## Releases and updates
-
-- Two products, each with its own tag and installers on the GitHub releases page (pre-releases during the beta):
-  - **b-suite** (`b-suite-v0.2.0`): every plugin in one installer, all with the same version. macOS: a universal `.pkg` with Audio Unit and VST3, where "Customise" lets you leave plugins out. Windows x64 and ARM64: a VST3 setup with one component per plugin.
-  - **b-rig** (`b-rig-v0.2.0`): the standalone app, for macOS (Apple Silicon) and Windows (x64 and ARM64).
-- To publish, on a Mac: `tools/release.sh b-suite 0.2.0` or `tools/release.sh b-rig 0.2.0`. It sets the version, builds and tests everything locally, makes the macOS installer, then tags, pushes and creates the release with it. The Windows installers are added to the same release from a Windows PC with `tools/release-windows.ps1` (see [docs/WINDOWS.md](docs/WINDOWS.md)), or by the GitHub Action of the tag once the repository variable `WINDOWS_CI` is `true`.
-- To build every plugin at once locally: `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` then `cmake --build build --target bsuite_plugins`.
-- b-rig checks for new b-rig releases, the plugins for new b-suite releases, once a day. If there is one, a small notice shows up in the corner; click it and the about panel opens with a download button. The check is an anonymous request to the GitHub releases.
+b-rig is free software under the [GNU Affero General Public License v3](LICENSE): you can use it, modify it and redistribute it, also commercially, as long as what you distribute stays under the same license with its source available. JUCE is used under its AGPLv3 option. The IBM Plex fonts are under the SIL Open Font License (`shared/Resources/OFL-IBMPlex.txt`).
 
 ## Logo and images
 
-`docs/` has the logo in three sizes (the banner above, a full-screen version at 1920 × 1080 and a square icon at 1024 × 1024, one square per plugin in the order of the chain) and two showcases at 3840 × 2160: every plugin around the b-suite logo (`b-suite-showcase.png`, good as the repository's social preview) and every plugin on its own (`b-suite-showcase-all.png`). All of them are generated: the logos by `BSuiteLogo` in b-rig, the showcases by `tools/make-showcase.sh` from the screenshots the tests save. Use them freely.
+`docs/` has the logo (banner, full screen 1920 × 1080, square icon 1024 × 1024) and two images at 3840 × 2160: the plugins around the b-rig logo (`b-rig-showcase.png`, good as the social preview) and the plugins on their own (`b-rig-plugins.png`). The logos come from `BSuiteLogo` in b-rig, the images from `tools/make-showcase.sh`, the installer backgrounds from `BSuiteLogo --installer`. Use them freely.

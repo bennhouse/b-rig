@@ -45,4 +45,4 @@ The tests measure the sound (levels, timing, decay, CPU) and save screenshots of
 
 ## Releases
 
-Maintainers publish with `tools/release.sh` (macOS) and `tools/release-windows.ps1` (Windows); see the README.
+Maintainers publish with `tools/release.sh <version>` on a Mac; see the README. Windows releases are being reworked.

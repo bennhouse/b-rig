@@ -1,8 +1,10 @@
-# Comune a tutti i plugin della b-suite. Si include PRIMA di project() (architetture macOS), poi si chiama
-# bsuite_setup() subito dopo project(): C++20, opzioni del compilatore e JUCE aggiunto una volta sola, così i plugin
-# si compilano sia ognuno dalla sua cartella sia tutti insieme dal CMakeLists.txt della radice.
+# Comune a b-rig e a tutti i plugin. Si include PRIMA di project() (architetture macOS), poi si chiama
+# bsuite_setup() subito dopo project(): C++20, opzioni del compilatore e JUCE aggiunto una volta sola, così app e
+# plugin si compilano sia ognuno dalla sua cartella sia tutti insieme dal CMakeLists.txt della radice.
 get_filename_component(BSUITE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)   # radice del repository
-set(BSUITE_VERSION "0.1.0" CACHE STRING "b-suite version (every plugin has the same version)")
+# una sola versione per l'app e per i plugin che il suo installer può aggiungere: il file VERSION.txt della radice
+file(STRINGS "${BSUITE_ROOT}/VERSION.txt" BSUITE_VERSION_FILE LIMIT_COUNT 1)
+set(BSUITE_VERSION "${BSUITE_VERSION_FILE}" CACHE STRING "b-rig version (app and plugins)")
 option(BSUITE_COPY_AFTER_BUILD "Copy the plugins to the system plug-in folders after building" ON)
 option(BSUITE_LTO "Link-time optimisation (slower builds; the Windows CI turns it off)" ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")

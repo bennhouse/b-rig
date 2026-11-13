@@ -1,8 +1,8 @@
 #pragma once
 // Controllo degli aggiornamenti, uguale per b-rig e per tutti i plugin.
 //
-// Le versioni pubblicate sono le release del repository GitHub (kUpdateRepo), con un tag per prodotto:
-// "b-rig-v0.2.0" per l'app, "b-suite-v0.2.0" per tutti i plugin (un solo installer, una sola versione). Una sola richiesta all'API delle release restituisce tutti i prodotti:
+// Le versioni pubblicate sono le release del repository GitHub (kUpdateRepo) con i tag "b-rig-v0.2.0": l'installer
+// di b-rig porta anche i plugin, che hanno la stessa versione. Una sola richiesta all'API delle release basta:
 // il risultato si salva in "b-suite/updates.settings" (condiviso tra app e plugin, anche in processi diversi)
 // e la richiesta si ripete al massimo una volta ogni 24 ore. Durante la beta contano anche le pre-release.
 //
@@ -15,7 +15,7 @@
 namespace ui::updates
 {
 // "proprietario/repository" delle release; vuoto = controllo spento
-inline constexpr const char* kUpdateRepo = "bennhouse/b-suite";
+inline constexpr const char* kUpdateRepo = "bennhouse/b-rig";
 inline constexpr bool kBeta = true;                       // tutta la suite è in beta
 inline constexpr juce::int64 kCheckEveryMs = 24 * 60 * 60 * 1000;
 

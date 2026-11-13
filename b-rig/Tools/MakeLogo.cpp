@@ -1,8 +1,9 @@
 // Genera il logo della b-suite (SVG) in tre formati:
-//   b-suite-banner.svg     1280 x 420   per il README di GitHub
-//   b-suite-fullscreen.svg 1920 x 1080  sfondo, video, presentazioni
-//   b-suite-icon.svg       1024 x 1024  icona quadrata (avatar, social)
-// Logotipo "b-suite" (b Plex Sans Bold e nome Medium nello stesso colore chiaro, trattino Light grigio), sotto
+//   b-rig-banner.svg       1280 x 420   per il README di GitHub
+//   b-rig-fullscreen.svg   1920 x 1080  sfondo, video, presentazioni
+//   b-rig-icon.svg         1024 x 1024  icona quadrata (avatar, social)
+// e, con --installer <cartella>, gli sfondi dell'installer macOS (chiaro e scuro, 1240 x 836: il doppio del pannello).
+// Logotipo "b-rig" (b Plex Sans Bold e nome Medium nello stesso colore chiaro, trattino Light grigio), sotto
 // una fila di quadrati, uno per plugin nel suo colore, in ordine di catena; in basso a destra la firma.
 // Il testo è convertito in tracciati: l'SVG si vede uguale anche senza i font IBM Plex.
 //   ./build/BSuiteLogo_artefacts/Release/BSuiteLogo ../docs [cartella per le anteprime PNG]
@@ -60,14 +61,15 @@ struct Scene
 {
     float w, h;
     std::vector<std::pair<juce::Path, juce::Colour>> shapes;
+    juce::Colour bg = background;
     void add (juce::Path p, juce::Colour c) { shapes.emplace_back (std::move (p), c); }
 
     juce::String svg() const
     {
         juce::String s;
         s << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " << (int) w << " " << (int) h << "\" width=\"" << (int) w
-          << "\" height=\"" << (int) h << "\" role=\"img\" aria-label=\"b-suite\">\n"
-          << "<rect width=\"100%\" height=\"100%\" fill=\"" << hex (background) << "\"/>\n";
+          << "\" height=\"" << (int) h << "\" role=\"img\" aria-label=\"b-rig\">\n"
+          << "<rect width=\"100%\" height=\"100%\" fill=\"" << hex (bg) << "\"/>\n";
         for (auto& [p, c] : shapes) s << "<path fill=\"" << hex (c) << "\" d=\"" << svgPath (p) << "\"/>\n";
         return s << "</svg>\n";
     }
@@ -75,7 +77,7 @@ struct Scene
     {
         juce::Image img (juce::Image::ARGB, (int) w, (int) h, true);
         juce::Graphics g (img);
-        g.fillAll (background);
+        g.fillAll (bg);
         for (auto& [p, c] : shapes) { g.setColour (c); g.fillPath (p); }
         return img;
     }
@@ -107,11 +109,11 @@ void addLockup (Scene& s, float size, float stripW, float gap, float tagSize, fl
     float x = 0.0f;
     x += textPath (b, "b", Face::SansBold, size, x);
     x += textPath (dash, "-", Face::SansLight, size, x);
-    textPath (name, "suite", Face::SansMedium, size, x, -0.02f);
+    textPath (name, "rig", Face::SansMedium, size, x, -0.02f);
     juce::Path all; all.addPath (b); all.addPath (dash); all.addPath (name);
     const auto ink = all.getBounds();
 
-    juce::Path tag; textPath (tag, "guitar plugins and a standalone rig", Face::SansRegular, tagSize);
+    juce::Path tag; textPath (tag, "a guitar rig in one app, plugins included", Face::SansRegular, tagSize);
     const auto tb = tag.getBounds();
     const float sq = (stripW - gap * (float) (kSquares - 1)) / (float) kSquares;
     const float gapA = size * 0.30f, gapB = tagSize * 1.35f;
@@ -154,6 +156,30 @@ Scene icon()
     addStrip (s, s.w * 0.5f, top + bb.getHeight() + gapA, stripW, gap);
     return s;
 }
+}
+
+// Sfondo dell'installer macOS: in basso a sinistra il logotipo b-rig piccolo e la fila dei colori dei plugin; il
+// resto vuoto, perché sopra il programma d'installazione scrive i testi. Variante chiara e scura (macOS sceglie
+// quella del tema del sistema).
+Scene installerBackground (bool dark)
+{
+    Scene s { 1240.0f, 836.0f, {} };
+    s.bg = dark ? background : juce::Colour (0xfff5f5f6);
+    const auto nameC = dark ? titleName : juce::Colour (0xff1c1c1c), dashC = dark ? titleDash : juce::Colour (0xff9a9a9a);
+    juce::Path b, dash, name;
+    float x = 0.0f;
+    x += textPath (b, "b", Face::SansBold, 64.0f, x);
+    x += textPath (dash, "-", Face::SansLight, 64.0f, x);
+    textPath (name, "rig", Face::SansMedium, 64.0f, x, -0.02f);
+    juce::Path all; all.addPath (b); all.addPath (dash); all.addPath (name);
+    const auto ink = all.getBounds();
+    const float margin = 56.0f, stripW = 400.0f, gap = 5.0f;
+    const float sq = (stripW - gap * (float) (kSquares - 1)) / (float) kSquares;
+    const float stripY = s.h - margin - sq;
+    const float dx = margin - ink.getX(), dy = stripY - 22.0f - ink.getBottom();
+    s.add (moved (b, dx, dy), nameC); s.add (moved (dash, dx, dy), dashC); s.add (moved (name, dx, dy), nameC);
+    addStrip (s, margin + stripW * 0.5f, stripY, stripW, gap);
+    return s;
 }
 
 // Vetrina a schermo intero: le schermate dei plugin a mosaico (righe giustificate: ogni riga riempie la larghezza e
@@ -250,13 +276,13 @@ int showcase (int argc, char** argv)
                 const auto dst = juce::Rectangle<float> (x, y, aspect (i) * h, h);
                 if (i == kLogo)
                 {
-                    // logotipo b-suite, senza i quadratini: b e nome chiari, trattino grigio
+                    // logotipo b-rig, senza i quadratini: b e nome chiari, trattino grigio
                     juce::Path pb, pd, pn;
                     const float size = dst.getHeight() * 0.42f;
                     float tx = 0.0f;
                     tx += textPath (pb, "b", ui::Face::SansBold, size, tx);
                     tx += textPath (pd, "-", ui::Face::SansLight, size, tx);
-                    textPath (pn, "suite", ui::Face::SansMedium, size, tx, -0.02f);
+                    textPath (pn, "rig", ui::Face::SansMedium, size, tx, -0.02f);
                     juce::Path all; all.addPath (pb); all.addPath (pd); all.addPath (pn);
                     const auto ink = all.getBounds();
                     const auto t = juce::AffineTransform::translation (dst.getCentreX() - ink.getCentreX(), dst.getCentreY() - ink.getCentreY());
@@ -283,14 +309,30 @@ int showcase (int argc, char** argv)
 int main (int argc, char** argv)
 {
     if (argc > 4 && juce::String (argv[1]) == "--showcase") { juce::ScopedJuceInitialiser_GUI gui; return showcase (argc, argv); }
+    if (argc > 2 && juce::String (argv[1]) == "--installer")
+    {
+        juce::ScopedJuceInitialiser_GUI gui;
+        const auto out = juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]);
+        out.createDirectory();
+        bool ok = true;
+        for (bool dark : { false, true })
+        {
+            auto png = out.getChildFile (dark ? "background-dark.png" : "background.png");
+            png.deleteFile();
+            juce::FileOutputStream os (png);
+            ok = os.openedOk() && juce::PNGImageFormat().writeImageToStream (installerBackground (dark).image(), os) && ok;
+            std::printf ("%s %s\n", ok ? "scritto" : "ERRORE", png.getFullPathName().toRawUTF8());
+        }
+        return ok ? 0 : 1;
+    }
     juce::ScopedJuceInitialiser_GUI init;
     const auto cwd = juce::File::getCurrentWorkingDirectory();
     const auto dir = cwd.getChildFile (argc > 1 ? argv[1] : "docs");
     const juce::File preview = argc > 2 ? cwd.getChildFile (argv[2]) : juce::File();
     dir.createDirectory();
     bool ok = true;
-    const std::pair<const char*, Scene> scenes[] = { { "b-suite-banner", banner() }, { "b-suite-fullscreen", fullscreen() },
-                                                     { "b-suite-icon", icon() } };
+    const std::pair<const char*, Scene> scenes[] = { { "b-rig-banner", banner() }, { "b-rig-fullscreen", fullscreen() },
+                                                     { "b-rig-icon", icon() } };
     for (const auto& [name, scene] : scenes)
     {
         const auto f = dir.getChildFile (juce::String (name) + ".svg");

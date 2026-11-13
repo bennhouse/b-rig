@@ -5,8 +5,8 @@ All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; e
 ## Unreleased
 
 ### Added
-- Suite installer: one macOS `.pkg` (Audio Unit and VST3, universal) and Windows x64 / ARM64 VST3 setups for all 19 plugins.
-- Update check: b-rig follows b-rig releases, the plugins follow b-suite releases; a notice in the corner opens the about panel with a download button.
+- One product, b-rig: the macOS installer (Apple Silicon) installs the app and, if you want, any of the 19 plugins as Audio Unit and/or VST3. App and plugins share one version (`VERSION.txt`).
+- Update check for the app and the plugins against the b-rig releases; a notice in the corner opens the about panel with a download button.
 - b-verb and b-delay: big fixed value boxes for the main controls, groups with on/off switches, buttons for freeze, sync, ping-pong and trails.
 
 ### Changed

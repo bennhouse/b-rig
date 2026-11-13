@@ -1,32 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)  # universale
-endif()
-
-# versione: in CI arriva dal tag della release (b-rig-v0.2.0 -> 0.2.0)
-set(BRIG_VERSION "0.1.0" CACHE STRING "b-rig version")
-project(BRig VERSION ${BRIG_VERSION} LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-if(MSVC)
-    add_compile_options(/utf-8 /bigobj)   # sorgenti UTF-8 (accenti, simboli dell'interfaccia); moduli con molti simboli
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")   # runtime statico: niente VC++ redistributable
-endif()
-
-# JUCE: copia condivisa in "Self Made Plugins/libs/JUCE", altrimenti la scarica.
-set(SMP_JUCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libs/JUCE")
-if(EXISTS "${SMP_JUCE_DIR}/CMakeLists.txt")
-    add_subdirectory("${SMP_JUCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
-else()
-    include(FetchContent)
-    FetchContent_Declare(JUCE
-        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-        GIT_TAG 9.0.5
-        GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(JUCE)
-endif()
+# versione (file VERSION.txt della radice), architetture macOS, opzioni del compilatore e JUCE: comuni ad app e plugin
+include("${CMAKE_CURRENT_LIST_DIR}/../shared/cmake/Suite.cmake")
+project(BRig VERSION ${BSUITE_VERSION} LANGUAGES C CXX)
+bsuite_setup()
 
 juce_add_gui_app(BRig
     COMPANY_NAME "b-suite"
@@ -56,7 +33,7 @@ set(BRIG_SOURCES
     ../shared/smp/Widgets.cpp)
 
 set(BRIG_DEFS SMP_ACCENT_ARGB=0xffe9d8a6 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-    JUCE_APPLICATION_NAME_STRING="b-rig" JUCE_APPLICATION_VERSION_STRING="${BRIG_VERSION}")
+    JUCE_APPLICATION_NAME_STRING="b-rig" JUCE_APPLICATION_VERSION_STRING="${BSUITE_VERSION}")
 if(MSVC)
     list(APPEND BRIG_DEFS _USE_MATH_DEFINES NOMINMAX)   # M_PI nei DSP; niente macro min/max di windows.h
 endif()
