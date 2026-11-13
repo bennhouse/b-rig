@@ -84,7 +84,11 @@ public:
             }
         deviceManager.addAudioCallback (&audio);
         window = std::make_unique<MainWindow> (engine, deviceManager);
-        if (auto* rc = dynamic_cast<rig::RigComponent*> (window->getContentComponent())) rc->saveSessionOnClose = true;
+        if (auto* rc = dynamic_cast<rig::RigComponent*> (window->getContentComponent()))
+        {
+            rc->saveSessionOnClose = true;
+            rc->grabKeyboardFocus();   // le scorciatoie (m, k, l, cmd+z) funzionano subito
+        }
         // primo avvio: una finestra spiega che b-rig non contiene IR di casse (si vede una volta sola)
         if (! props->getBoolValue ("welcomeShown", false))
             if (auto* rc = dynamic_cast<rig::RigComponent*> (window->getContentComponent()))

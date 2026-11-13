@@ -286,6 +286,33 @@ bool RigEngine::placeSlot (int index, int lane, int pos)
     return true;
 }
 
+Slot* RigEngine::copyToLane (int index, int lane)
+{
+    if (! split || index < 0 || index >= (int) order.size() || (int) order.size() >= kMaxSlots) return nullptr;
+    const auto& src = *order[(size_t) index];
+    if (src.lane == 0 || (lane != 1 && lane != 2) || lane == src.lane || ! canPlace (src.info->id, lane)) return nullptr;
+    auto c = cloneSlot (src);
+    // posizione logica nel ramo: dopo l'ultimo modulo che nella catena della suite viene prima
+    int pos = 0, k = 0;
+    for (auto& o : order) if (o->lane == lane) { ++k; if (o->info->order <= src.info->order) pos = k; }
+    const juce::ScopedLock sl (chainLock());
+    auto* raw = c.get();
+    insertSlot (std::move (c), lane, pos);
+    armCovered();
+    publish();
+    if (onChainChanged) onChainChanged();
+    return raw;
+}
+
+int RigEngine::latencySamples() const
+{
+    int trunk = 0, laneLat[3] = { 0, 0, 0 };
+    for (auto& s : order)
+        if (s->proc != nullptr && s->enabled.load())
+            (s->lane == 0 ? trunk : laneLat[s->lane]) += s->proc->getLatencySamples();
+    return trunk + juce::jmax (laneLat[1], laneLat[2]);
+}
+
 void RigEngine::moveSlot (int index, int delta)
 {
     if (index < 0 || index >= (int) order.size()) return;
@@ -564,7 +591,7 @@ void RigEngine::processSlot (Slot& s, juce::AudioBuffer<float>& w, int n) noexce
 void RigEngine::startMeasure (int what)
 {
     measureWhat = measureWhat.load() | what;
-    if (widenState.load() == 0) { capPos = 0; widenState = 1; }   // il thread audio non registra finché widenState non è 1
+    if (widenState.load() == 0) { capPos = 0; measureProg = 0.0f; widenState = 1; }   // il thread audio non registra finché widenState non è 1
 }
 
 RigEngine::BalanceResult RigEngine::measureBalance (const float* a, const float* b, int n, double sr)
@@ -720,12 +747,19 @@ void RigEngine::process (const float* const* in, int numIn, float* const* out, i
         }
         juce::FloatVectorOperations::copy (w1, w0, n);
 
-        // playhead: i bpm del metronomo per i moduli sincronizzati al tempo
+        // playhead: in una DAW quello del progetto; nell'app i bpm del metronomo per i moduli sincronizzati al tempo
+        if (hostPlayHead != nullptr)
+        {
+            if (const auto pos = hostPlayHead->getPosition()) playHead.info = *pos;
+        }
+        else
+        {
         playHead.info.setBpm (juce::jlimit (kMinBpm, kMaxBpm, bpm.load (std::memory_order_relaxed)));
         const auto sig = kSigs[(size_t) juce::jlimit (0, kNumSigs - 1, sigIndex.load (std::memory_order_relaxed))];
         playHead.info.setTimeSignature (juce::AudioPlayHead::TimeSignature { sig.first, sig.second });
         playHead.info.setIsPlaying (metroOn.load (std::memory_order_relaxed));
         playHead.info.setPpqPosition (ppq);
+        }
 
         if (! chain->split)
             for (int k = 0; k < chain->n; ++k) processSlot (*chain->s[(size_t) k], work, n);
@@ -748,6 +782,7 @@ void RigEngine::process (const float* const* in, int numIn, float* const* out, i
                         capB[(size_t) capPos] = 0.5f * (bw[0][i] + bw[1][i]);
                         if (capPos >= lead) capA[(size_t) (capPos - lead)] = 0.5f * (aw[0][i] + aw[1][i]);
                     }
+                    measureProg.store ((float) capPos / (float) capB.size(), std::memory_order_relaxed);
                     if (capPos >= (int) capB.size())
                     {
                         double e = 0; for (float v : capA) e += (double) v * v;

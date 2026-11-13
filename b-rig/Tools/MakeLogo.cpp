@@ -158,9 +158,10 @@ Scene icon()
 }
 }
 
-// Sfondo dell'installer macOS: in basso a sinistra il logotipo b-rig piccolo e la fila dei colori dei plugin; il
-// resto vuoto, perché sopra il programma d'installazione scrive i testi. Variante chiara e scura (macOS sceglie
-// quella del tema del sistema).
+// Sfondo dell'installer macOS: in basso a sinistra il logotipo b-rig piccolo e i colori dei plugin su due righe,
+// tutto dentro la colonna dei passaggi (circa 170 pt): il riquadro dei testi e i pulsanti (Stampa, Indietro...) non
+// lo coprono. Il resto vuoto, perché sopra il programma d'installazione scrive i testi. Variante chiara e scura
+// (macOS sceglie quella del tema del sistema).
 Scene installerBackground (bool dark)
 {
     Scene s { 1240.0f, 836.0f, {} };
@@ -168,17 +169,23 @@ Scene installerBackground (bool dark)
     const auto nameC = dark ? titleName : juce::Colour (0xff1c1c1c), dashC = dark ? titleDash : juce::Colour (0xff9a9a9a);
     juce::Path b, dash, name;
     float x = 0.0f;
-    x += textPath (b, "b", Face::SansBold, 64.0f, x);
-    x += textPath (dash, "-", Face::SansLight, 64.0f, x);
-    textPath (name, "rig", Face::SansMedium, 64.0f, x, -0.02f);
+    x += textPath (b, "b", Face::SansBold, 104.0f, x);
+    x += textPath (dash, "-", Face::SansLight, 104.0f, x);
+    textPath (name, "rig", Face::SansMedium, 104.0f, x, -0.02f);
     juce::Path all; all.addPath (b); all.addPath (dash); all.addPath (name);
     const auto ink = all.getBounds();
-    const float margin = 56.0f, stripW = 400.0f, gap = 5.0f;
-    const float sq = (stripW - gap * (float) (kSquares - 1)) / (float) kSquares;
-    const float stripY = s.h - margin - sq;
-    const float dx = margin - ink.getX(), dy = stripY - 22.0f - ink.getBottom();
+    // due righe di quadrati larghe quanto il logotipo
+    const float margin = 56.0f, gap = 5.0f, stripW = ink.getWidth();   // circa 170 px: finisce a 113 pt dal bordo
+    const int perRow = (kSquares + 1) / 2;
+    const float sq = (stripW - gap * (float) (perRow - 1)) / (float) perRow;
+    const float stripY = s.h - margin - 2.0f * sq - gap;
+    const float dx = margin - ink.getX(), dy = stripY - 26.0f - ink.getBottom();
     s.add (moved (b, dx, dy), nameC); s.add (moved (dash, dx, dy), dashC); s.add (moved (name, dx, dy), nameC);
-    addStrip (s, margin + stripW * 0.5f, stripY, stripW, gap);
+    for (int i = 0; i < kSquares; ++i)
+    {
+        juce::Path r; r.addRectangle (margin + (float) (i % perRow) * (sq + gap), stripY + (float) (i / perRow) * (sq + gap), sq, sq);
+        s.add (r, juce::Colour (kChain[i]));
+    }
     return s;
 }
 

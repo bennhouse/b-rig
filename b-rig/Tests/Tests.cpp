@@ -2,6 +2,7 @@
 // fade-in di 80 ms all'armo, limiter a -0,5 dBFS, metronomo, tuner (spento di default), preset del rig,
 // trascinamento delle card, riapertura degli editor, tutti i moduli (processo + editor) e snapshot dell'interfaccia.
 #include "UI/RigComponent.h"
+#include "Plugin/RigPlugin.h"
 #include "smp/TestKit.h"
 using namespace tk;
 void rigBlendLoadTestIr (juce::AudioProcessor&);
@@ -585,8 +586,9 @@ int main()
             ui.confirmForTest();
             check (! e.isSplit() && e.laneHas (0, "delay") && ! e.laneHas (0, "verb"), "riuniti: resta il ramo A");
         }
-        // trascinamento con lo split: shift porta il modulo nell'altro ramo; ogni ramo ha i suoi moduli e la libreria
-        // segue il ramo che si vede; un modulo nella parte comune non entra in un ramo (e viceversa)
+        // trascinamento con lo split: la catena espansa mostra i due rami uno sopra l'altro e un modulo passa da un
+        // ramo all'altro; ogni ramo ha i suoi moduli e la libreria segue il ramo che si vede; un modulo nella parte
+        // comune non entra in un ramo (e viceversa). Il tasto copia mette un modulo anche nell'altro ramo.
         {
             ui.loadPreset ("clean slate");
             ui.addFromLibrary ("comp"); ui.addFromLibrary ("distort");
@@ -595,14 +597,38 @@ int main()
             ui.showLane (1);
             ui.addFromLibrary ("delay");
             check (ui.inChain ("delay") && e.laneHas (1, "delay"), "ramo a: b-delay");
-            const auto v = ui.viewSlots();
-            int dIdx = -1; for (int d = 0; d < (int) v.size(); ++d) if (e.slot (v[(size_t) d]).info->id == "delay") dIdx = d;
-            const bool moved = ui.dragToLaneForTest (dIdx, true, 0);
-            check (moved && e.laneHas (2, "delay") && ! e.laneHas (1, "delay") && ui.viewLane == 2, "shift durante il trascinamento: b-delay passa nel ramo b e la vista lo segue");
+            check (ui.canCopy (indexOfId (e, "delay")), "b-delay solo nel ramo a: si può copiare nel ramo b");
+            check (! ui.canCopy (indexOfId (e, "comp")), "b-comp nella parte comune: niente tasto copia");
+            check (! ui.canCopy (e.laneStart (1)), "b-distort già nell'altro ramo: niente tasto copia");
+            ui.setExpanded (true);
+            check (ui.expanded, "catena espansa con lo split");
+            pump (60);
+            savePng (ui, "gui_brig_expanded.png");
+            // a metà del trascinamento: b-delay dalla riga del ramo a verso la riga del ramo b
+            ui.previewDragForTest (indexOfId (e, "delay"), ui.chainXForTest (600), ui.rowYForTest (1));
+            pump (40); savePng (ui, "gui_brig_expanded_drag.png");
+            ui.cancelDragForTest();
+            const bool moved = ui.dropToForTest (indexOfId (e, "delay"), 2, 0);
+            check (moved && e.laneHas (2, "delay") && ! e.laneHas (1, "delay") && ui.viewLane == 2, "catena espansa: b-delay passa nel ramo b");
+            ui.setExpanded (false);
             ui.showLane (1);
             check (! ui.inChain ("delay") && ui.inChain ("distort") && ui.inChain ("comp"), "ramo a: b-delay di nuovo libero in libreria, b-comp in comune");
             ui.showLane (2);
             check (ui.inChain ("delay"), "ramo b: b-delay già presente");
+            // copia nel ramo a, con il suo stato
+            {
+                auto& d = e.slot (indexOfId (e, "delay"));
+                d.proc->getParameters()[0]->setValueNotifyingHost (0.37f);
+                const int n0 = e.numSlots();
+                ui.copyToOtherLane (e.indexOf (&d));
+                int copyIdx = -1; for (int i = e.laneStart (1); i < e.laneStart (1) + e.laneSize (1); ++i) if (e.slot (i).info->id == "delay") copyIdx = i;
+                const float want = d.proc->getParameters()[0]->getValue();   // il valore com'è dopo l'arrotondamento del parametro
+                check (e.numSlots() == n0 + 1 && copyIdx >= 0 && std::abs (e.slot (copyIdx).proc->getParameters()[0]->getValue() - want) < 1.0e-4f
+                       && std::abs (want - juce::jlimit (0.0f, 1.0f, want)) < 1.0e-6f && want != d.proc->getParameters()[0]->getDefaultValue(),
+                       "copia: b-delay anche nel ramo a, con gli stessi valori");
+                check (! ui.canCopy (copyIdx), "dopo la copia: il tasto copia sparisce (l'altro ramo ce l'ha)");
+                e.removeSlot (copyIdx);
+            }
             // b-distort (in tutti e due i rami) non può andare nella parte comune
             const int n0 = e.numSlots();
             const auto vb = ui.viewSlots();
@@ -619,17 +645,29 @@ int main()
             ui.showLane (2);
             pump (60);
             savePng (ui, "gui_brig_split_drag.png");
-            // a metà del trascinamento: nel ramo (b-distort verso la fine del ramo b), nella parte comune (non può:
-            // rosso), e con shift nel ramo a
-            ui.previewDragForTest (2, ui.chainXForTest (900), false);
+            // a metà del trascinamento: nel ramo (b-distort verso la fine del ramo b) e nella parte comune (non può)
+            ui.previewDragForTest (indexOfId (e, "distort") >= 0 ? e.laneStart (2) : 0, ui.chainXForTest (900), ui.rowYForTest (0));
             pump (40); savePng (ui, "gui_brig_drag_lane.png");
-            ui.previewDragForTest (2, ui.chainXForTest (5), false);
+            ui.previewDragForTest (e.laneStart (2), ui.chainXForTest (5), ui.rowYForTest (0));
             pump (40); savePng (ui, "gui_brig_drag_shared.png");
-            ui.previewDragForTest (2, ui.chainXForTest (600), true);
-            pump (40); savePng (ui, "gui_brig_drag_shift.png");
-            check (ui.viewLane == 1, "shift tenuto: si vede l'altro ramo");
             ui.cancelDragForTest();
-            check (ui.viewLane == 2, "trascinamento annullato: si torna al ramo di partenza");
+            // il + della libreria: passandoci sopra si vede dove entra il modulo
+            const auto tgt = ui.libraryTarget ("verb");
+            check (tgt.lane == 2, "il + con lo split: nel ramo che si vede", tgt.lane);
+            ui.hoverForTest (ui.libAddCentreForTest ("verb"));
+            pump (40); savePng (ui, "gui_brig_library_hover.png");
+            ui.hoverForTest ({ -1, -1 });
+            // balance mentre misura: il tasto si riempie da sinistra quanto la registrazione è avanti
+            e.startMeasure (rig::RigEngine::kBalance);
+            runEngine (e, 12000, [] (int i) { return 0.2f * (float) std::sin (tp * 110.0 * i / sr); });
+            const float prog = e.measureProgress();
+            check (prog > 0.2f && prog < 0.5f, "balance: avanzamento della misura", prog);
+            pump (40); savePng (ui, "gui_brig_balance_progress.png");
+            e.cancelMeasure();
+            ui.setExpanded (true);
+            ui.toggleSplit();
+            if (ui.confirmVisibleForTest()) ui.confirmForTest();
+            check (! e.isSplit() && ! ui.expanded, "riuniti i rami: la catena torna a una riga");
         }
         // il suono: rami uguali = catena unica; wide = A a sinistra e B a destra; ampli prima dello split coperto
         // solo con una cassa in entrambi i rami
@@ -719,6 +757,29 @@ int main()
             std::printf ("       balance: ritardo %.2f ms, a %.2f, b %.2f\n", r.alignMs, r.gainA, r.gainB);
             check (std::abs (r.alignMs + 1.0f) < 0.05f && r.gainB < 0.0f && std::abs (std::abs (r.gainB) / r.gainA - 2.0f) < 0.05f, "balance: b arriva 1 ms dopo, invertito e più piano: a ritardato di 1 ms, b invertito, volumi pari");
         }
+        // tasti dell'app: m e k accendono e spengono il metronomo; l batte il tempo, che cambia dal quarto tocco
+        {
+            const bool m0 = e.metroOn.load();
+            ui.keyPressed (juce::KeyPress ('m', 0, 'm'));
+            check (e.metroOn.load() != m0, "m: metronomo acceso o spento");
+            ui.keyPressed (juce::KeyPress ('k', 0, 'k'));
+            check (e.metroOn.load() == m0, "k: anche");
+            const float bpm0 = ui.controls.get ("bpm");
+            for (int k = 0; k < 3; ++k) { ui.keyPressed (juce::KeyPress ('l', 0, 'l')); juce::Thread::sleep (500); }
+            check (std::abs (ui.controls.get ("bpm") - bpm0) < 0.01f, "l tre volte: il tempo non cambia ancora");
+            ui.keyPressed (juce::KeyPress ('l', 0, 'l'));
+            const float bpm1 = ui.controls.get ("bpm");
+            std::printf ("       tap con l, 500 ms tra i tocchi: %.0f bpm\n", bpm1);
+            check (std::abs (bpm1 - 120.0f) <= 3.0f, "l al quarto tocco: 120 bpm", bpm1);
+        }
+        // preset modificato: il nome resta (in giallo), non diventa "unsaved"
+        {
+            ui.setPresetState ("crunch rig", true);
+            check (ui.currentPreset == "crunch rig" && ui.dirty, "modificato: resta il nome del preset");
+            pump (60);
+            savePng (ui, "gui_brig_dirty_name.png");
+            ui.setPresetState ("clean slate", false);
+        }
         // primo avvio
         ui.showWelcome();
         pump (100);
@@ -732,6 +793,50 @@ int main()
         ui.select (&e.slot (e.numSlots() - 1));
         pump (300);
         savePng (ui, "gui_brig_large.png");
+    }
+
+    // 9. b-rig come plugin: mono -> stereo, il tempo della DAW ai moduli, la catena e il preset nel progetto
+    {
+        struct Head final : juce::AudioPlayHead
+        {
+            juce::Optional<PositionInfo> getPosition() const override { PositionInfo p; p.setBpm (87.0); p.setIsPlaying (true); return p; }
+        } head;
+        rig::RigPluginProcessor p;
+        check (p.getTotalNumInputChannels() == 1 && p.getTotalNumOutputChannels() == 2, "plugin: mono in ingresso, stereo in uscita");
+        juce::AudioProcessor::BusesLayout st; st.inputBuses.add (juce::AudioChannelSet::stereo()); st.outputBuses.add (juce::AudioChannelSet::stereo());
+        juce::AudioProcessor::BusesLayout mm; mm.inputBuses.add (juce::AudioChannelSet::mono()); mm.outputBuses.add (juce::AudioChannelSet::mono());
+        check (p.checkBusesLayoutSupported (st) && ! p.checkBusesLayoutSupported (mm), "plugin: stereo in ingresso accettato (sommato), uscita sempre stereo");
+        p.setPlayHead (&head);
+        p.prepareToPlay (sr, 256);
+        p.engine.addModule ("delay");
+        juce::AudioBuffer<float> buf (2, 256);
+        juce::MidiBuffer midi;
+        double energy = 0;
+        for (int b = 0; b < 40; ++b)
+        {
+            buf.clear();
+            for (int i = 0; i < 256; ++i) buf.setSample (0, i, 0.3f * (float) std::sin (tp * 220.0 * (b * 256 + i) / sr));
+            p.processBlock (buf, midi);
+            for (int i = 0; i < 256; ++i) energy += (double) buf.getSample (1, i) * buf.getSample (1, i);
+        }
+        check (energy > 1.0, "plugin: la chitarra esce anche a destra", energy);
+        auto* mp = p.engine.slot (0).proc->getPlayHead();
+        const auto pos = mp != nullptr ? mp->getPosition() : juce::Optional<juce::AudioPlayHead::PositionInfo>();
+        check (pos.hasValue() && pos->getBpm().hasValue() && std::abs (*pos->getBpm() - 87.0) < 1.0e-6, "plugin: i moduli vedono il tempo della DAW (87 bpm)");
+        p.presetName = "crunch rig"; p.presetDirty = true;
+        juce::MemoryBlock mb; p.getStateInformation (mb);
+        rig::RigPluginProcessor q;
+        q.setStateInformation (mb.getData(), (int) mb.getSize());
+        check (q.engine.numSlots() == 1 && q.engine.slot (0).info->id == "delay" && q.presetName == "crunch rig" && q.presetDirty, "plugin: catena e preset si riaprono dal progetto");
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> ed (q.createEditor());
+            auto* re = dynamic_cast<rig::RigPluginEditor*> (ed.get());
+            check (re != nullptr && re->rig().currentPreset == "crunch rig" && re->rig().dirty && re->rig().plugin, "plugin: l'interfaccia mostra il preset (modificato)");
+            pump (200);
+            savePng (*ed, "gui_brig_plugin.png");
+            q.editorBeingDeleted (ed.get());
+        }
+        p.releaseResources();
     }
     return finish();
 }

@@ -2,6 +2,25 @@
 
 All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; every plugin shares the b-suite version, b-rig has its own.
 
+## 0.4.0 beta
+
+### Added
+- b-rig as an AU and VST3 plugin: the same chain, split and presets as the app (same folder) inside a DAW, always mono in and stereo out. Each instance keeps its chain and preset in the project. In the DAW the metronome and the audio setup disappear; modules with a tempo setting follow the project tempo when set to sync. The latency of the modules that are on is reported to the DAW.
+- Installer: three lines, `b-rig standalone`, `b-rig plugin` and `b-suite plugins`, the last two with Audio Unit and VST3.
+- b-rig: a button that expands the split chain downwards, with lane b under lane a, to drag modules from one lane to the other; the open module stays still and dark underneath until you press it again.
+- b-rig: a copy button on the cards of a lane (on hover, left of the `x`) that puts the same module with its settings in the other lane.
+- b-rig: hovering the `+` of the library shows where the module would go; after the click the new card lights up and a line says where it went.
+- b-rig app: keys `m` and `k` (metronome on/off) and `l` (tap tempo).
+
+### Changed
+- b-rig: shift no longer switches lane while dragging (the expanded chain replaces it); the `< >` arrows are gone from the cards.
+- b-rig: `balance` fills from left to right while it measures, instead of blinking.
+- b-rig: a changed preset keeps its name, in yellow, instead of showing `unsaved`.
+- Tap tempo starts from the fourth tap in b-rig and b-delay, as in b-aftercab.
+
+### Fixed
+- Installer: the logotype and the colour squares of the background no longer end up under the text box and the Print button.
+
 ## 0.3.0 beta
 
 ### Added

@@ -49,9 +49,34 @@ target_link_libraries(BRig
     PRIVATE BRigAssets juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
+# ---- b-rig come plugin (AU, VST3): la stessa catena dentro una DAW, mono -> stereo, i preset dell'app
+juce_add_plugin(BRigPlugin
+    COMPANY_NAME "b-suite"
+    BUNDLE_ID com.bsuite.brig.plugin
+    PLUGIN_MANUFACTURER_CODE Bsui
+    PLUGIN_CODE Brig
+    FORMATS AU VST3
+    PRODUCT_NAME "b-rig"
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    AU_MAIN_TYPE kAudioUnitType_Effect
+    VST3_CATEGORIES Fx Distortion
+    COPY_PLUGIN_AFTER_BUILD ${BSUITE_COPY_AFTER_BUILD}
+    NEEDS_WEB_BROWSER FALSE
+    NEEDS_CURL FALSE)
+target_sources(BRigPlugin PRIVATE Source/Plugin/RigPlugin.cpp ${BRIG_SOURCES})
+target_include_directories(BRigPlugin PRIVATE ${BRIG_INCLUDES})
+target_compile_definitions(BRigPlugin PRIVATE ${BRIG_DEFS})
+target_compile_definitions(BRigPlugin PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
+target_link_libraries(BRigPlugin
+    PRIVATE BRigAssets juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra
+    PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
+
 # ---- Test (riga di comando)
 juce_add_console_app(BRigTests PRODUCT_NAME "BRigTests")
-target_sources(BRigTests PRIVATE Tests/Tests.cpp ${BRIG_SOURCES})
+target_sources(BRigTests PRIVATE Tests/Tests.cpp Source/Plugin/RigPlugin.cpp ${BRIG_SOURCES})
 target_include_directories(BRigTests PRIVATE ${BRIG_INCLUDES})
 target_compile_definitions(BRigTests PRIVATE ${BRIG_DEFS} JUCE_MODAL_LOOPS_PERMITTED=1)
 target_link_libraries(BRigTests PRIVATE BRigAssets juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra

@@ -22,7 +22,7 @@ A delay for any source with its character inside the feedback loop, so each repe
 The window has three levels, from the most important down:
 
 - **Top right:** `type` (digital, tape, bbd, lofi, reverse).
-- **Big values**, each centred in its own column in a fixed box: the number never moves when its digits change (it is right-aligned in a slot as wide as the longest value), the grey fill and the box's bottom edge in the plugin's colour show where the value sits in its range: `time` (1-2000 ms; with `sync` the note value instead: 1/1 to 1/16, dotted D and triplet T, on the song tempo), the `sync` and `tap` buttons (`tap` averages the last clicks and switches sync off), `feedback` (0-110 %) and `mix`. Drag (right or up for more), use the wheel, or double-click to reset and type a value.
+- **Big values**, each centred in its own column in a fixed box: the number never moves when its digits change (it is right-aligned in a slot as wide as the longest value), the grey fill and the box's bottom edge in the plugin's colour show where the value sits in its range: `time` (1-2000 ms; with `sync` the note value instead: 1/1 to 1/16, dotted D and triplet T, on the song tempo), the `sync` and `tap` buttons (`tap` sets the time from the fourth click, averaging the last clicks, and switches sync off), `feedback` (0-110 %) and `mix`. Drag (right or up for more), use the wheel, or double-click to reset and type a value.
 - **The timeline** (left above the centre line, right below): the predicted repeats (position from time, offset and ping-pong, height from feedback, wider bells with smear), the sound travelling along the delay line, the input at 0 ms in grey, and the repeats lighting up when they sound. The window adapts to the delay (250 ms, 500 ms, 1 s or 2 s, the shortest that shows at least four repeats). With `tape` or `bbd` a tag says how far the highs of the repeats reach at the current time.
 - **Groups** at the bottom, in equal columns with a thin line between them. Their numbers (15 px), labels (14 px) and boxes (22 px high) are a little larger than in the other plugins, and the big values a little smaller (20 px in 34 px boxes), so the two levels stay in balance. The optional ones have an on/off box next to the title; when a group is off its title and labels turn dark grey and its controls are disabled:
   - **tone**: `locut` (20-800 Hz), `hicut` (0.8-20 kHz).
@@ -38,7 +38,7 @@ Switching a group on or off glides, so it never clicks (tested). Projects saved 
 
 - 250 ms, feedback 50 %: repeats at 12000 and 24001 samples (48 kHz), the second 6.2 dB below the first.
 - `offset` +20 %: the right repeat at 300 ms. `ping-pong`: the first repeat on the left only, the second on the right.
-- `sync`: dotted 1/8 at 120 bpm = 375 ms. `tap` at 500 ms intervals: 504 ms.
+- `sync`: dotted 1/8 at 120 bpm = 375 ms. `tap` at 500 ms intervals: three clicks leave the time as it is, the fourth sets it to 500 ms.
 - Every type at feedback 110 %: it self-oscillates with peaks under 1.1.
 - Longer delays sound darker, as on the real machines (energy at 4 kHz against 500 Hz in the first repeat of a noise burst): `bbd` +7.6 dB at 100 ms, −14.9 dB at 800 ms; `tape` +7.7 dB at 100 ms, +4.0 dB at 800 ms.
 - Changing the time while playing: the repeats bend in pitch with no discontinuity (second difference at most 0.27 of the first).

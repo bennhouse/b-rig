@@ -2,7 +2,7 @@
 
 **b-rig** is a free and open-source guitar rig in one app. Plug in the guitar and play through tuner, amp, cab and effects, with presets and a metronome. No DAW needed.
 
-Its installer can also add **the same effects as plugins** for your DAW: you choose which ones, and whether you want them as Audio Unit, VST3 or both.
+Its installer can also add **b-rig as a plugin** for your DAW (the same chain and presets, mono in and stereo out) and **every effect as its own plugin**, as Audio Unit, VST3 or both.
 
 **License:** [GNU AGPLv3](LICENSE) · **Status:** beta · **Download:** [latest release](https://github.com/bennhouse/b-rig/releases/latest)
 
@@ -12,17 +12,23 @@ Its installer can also add **the same effects as plugins** for your DAW: you cho
 
 1. Download `b-rig-<version>-macos-arm64.dmg` from the [latest release](https://github.com/bennhouse/b-rig/releases/latest) (macOS 11 or later, Apple Silicon).
 2. Open it and double-click **Install b-rig**. The installer is not notarized yet, so the first time macOS blocks it: open **System Settings → Privacy & Security** and click **Open Anyway**, then open it again.
-3. On the **Installation Type** page b-rig is always selected. Do you also want the plugins? Tick **Add the plugins for your DAW** for all of them, as Audio Unit and VST3. Open it to choose the **Format** (**Audio Unit** for Logic Pro and GarageBand, **VST3** for Ableton Live, Reaper, Cubase…, or both) and, under **Plugins**, only the ones you want: they stay grey until a format is ticked. Leave it unticked for the app only.
+3. On the **Installation Type** page choose what to install:
+   - **b-rig standalone**: the app (ticked by default);
+   - **b-rig plugin**: b-rig inside your DAW;
+   - **b-suite plugins**: every effect as its own plugin.
+
+   Ticking **b-rig plugin** or **b-suite plugins** takes both formats; open the line to pick only **Audio Unit** (Logic Pro, GarageBand) or **VST3** (Ableton Live, Reaper, Cubase…).
 4. b-rig includes no cab IRs. To hear b-amp, add b-blend after it and load your own IR files (`.wav`); until then b-amp stays muted. The app says this the first time it opens.
 
-The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where your DAW lists them under "b-suite". Run the installer again to add or remove plugins. A Windows version is in the works.
+The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where your DAW lists them under "b-suite". Run the installer again to add more. A Windows version is in the works.
 
 ## The app
 
 - **The chain:** drag modules from the library into the chain and reorder them. Each module is one of the plugins below, with the same sound and interface, at most once in the chain. It starts empty.
-- **Split:** divide the chain into two parallel lanes with different modules (two amps, a delay on one side and a reverb on the other), from any point, without making the chain bar any wider. The lanes play left and right (`stereo`, with a measured delay on one side that keeps the mono sum full) or summed (`mono`), and `balance` lines up their phase and evens out their volume.
+- **Split:** divide the chain into two parallel lanes with different modules (two amps, a delay on one side and a reverb on the other), from any point. Expand the chain to see both lanes one above the other and drag modules between them, or copy a module to the other lane with its settings. The lanes play left and right (`stereo`, with a measured delay on one side that keeps the mono sum full) or summed (`mono`), and `balance` lines up their phase and evens out their volume.
 - **Safe by design:** b-amp stays muted until there is a cab after it, so a raw amp never blasts into your headphones, and a limiter protects the output.
-- **Tuner, metronome** (volume and pitch), **presets** with colours, rename, import and export, `save` and `new` in the top bar, **undo / redo** for every change, and audio settings kept between sessions. The app reopens where you left it, unsaved changes included. Presets live outside the app, so updates never touch them.
+- **Tuner, metronome** (volume and pitch; `m` or `k` switches it, `l` taps the tempo), **presets** with colours, rename, import and export, `save` and `new` in the top bar, **undo / redo** for every change, and audio settings kept between sessions. The app reopens where you left it, unsaved changes included. Presets live outside the app, so updates never touch them.
+- **In a DAW:** b-rig as an AU or VST3 plugin, with the same presets as the app. The tempo is the project's: modules with a tempo setting follow it when set to sync.
 - **Updates:** once a day b-rig and the plugins check for a new release; a small notice in the corner opens the download. The about panel (click the name) also has `check for updates`.
 
 More in [b-rig/README.md](b-rig/README.md).
@@ -85,7 +91,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target brig_release
 ```
 
-That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`) and every plugin. The app and each plugin also build on their own from their folder, and each one has a test program that measures the sound and saves screenshots of the interface.
+That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`), b-rig as a plugin and every plugin. The app and each plugin also build on their own from their folder, and each one has a test program that measures the sound and saves screenshots of the interface.
 
 ## Make it yours
 
@@ -96,7 +102,7 @@ That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`) and every p
 
 ## Releases
 
-One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (marked "beta" in its title for now). On a Mac, `tools/release.sh 0.2.0` sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
+One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (marked "beta" in its title for now). On a Mac, `tools/release.sh 0.4.0` sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
 
 ## License
 

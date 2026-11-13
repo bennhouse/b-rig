@@ -4,7 +4,8 @@
 //   1. barra in alto (56 px): logo (about) | presets e metronomo al centro | setup a destra
 //   2. colonna a sinistra (220 px): tuner (spento finché non lo premi) e module library
 //   3. active signal chain (68 px): card trascinabili. A sinistra il tasto dello split (una linea: catena unica;
-//      due linee: due rami paralleli) e, con lo split, il selettore del ramo [A|B] che si sta guardando.
+//      due linee: due rami paralleli) e, con lo split, i pulsanti del ramo che si sta guardando (a, b) e quello che
+//      espande la catena: alta il doppio, sopra al modulo aperto (scurito), mostra i due rami uno sopra l'altro.
 //   4. workspace: l'editor completo del modulo selezionato
 // Setup e presets si aprono come schermate a tutta finestra (si chiudono con la x).
 #include "Engine/RigEngine.h"
@@ -72,6 +73,7 @@ public:
     std::function<bool()> isOn;
     std::function<void()> onClick;
     std::function<juce::Colour()> onColour;
+    std::function<float()> progress;   // 0..1: si riempie da sinistra (una misura in corso); < 0 = normale
     bool dim = false;
     int idealWidth() const;
     void paint (juce::Graphics&) override;
@@ -136,7 +138,12 @@ struct TunerAnalyser
 class RigComponent final : public juce::Component, private juce::Timer
 {
 public:
-    RigComponent (RigEngine&, juce::AudioDeviceManager*);
+    // inPlugin: b-rig dentro una DAW (niente metronomo, setup audio né scorciatoie da tastiera)
+    RigComponent (RigEngine&, juce::AudioDeviceManager*, bool inPlugin = false);
+    const bool plugin;
+    // il preset e lo stato "modificato" (il plugin li salva nel progetto)
+    void setPresetState (const juce::String& name, bool isDirty);
+    std::function<void (const juce::String&, bool)> onPresetState;
     ~RigComponent() override;
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -233,20 +240,33 @@ public:
     void setTunerActive (bool);
     bool isTunerActive() const { return engine.tunerOn.load(); }
     void dragCardForTest (int from, int toGap);   // indici della vista
-    // trascina la card della vista nel ramo (con shift: nell'altro ramo) alla posizione pos; true se si è spostata
-    bool dragToLaneForTest (int viewIndex, bool shift, int pos);
-    // per gli screenshot: la card della vista trascinata fino alla x (in coordinate del componente), con o senza shift
-    void previewDragForTest (int viewIndex, int x, bool shift)
+    // lascia il modulo (indice dell'engine) nel ramo alla posizione pos, come un trascinamento; true se si è spostato
+    bool dropToForTest (int index, int lane, int pos);
+    // per gli screenshot: la card (indice dell'engine) trascinata fino al punto x, y (coordinate del componente)
+    void previewDragForTest (int index, int x, int y)
     {
-        const auto v = viewSlots();
-        dragHomeLane = engine.isSplit() ? viewLane : 0;
-        pressSlot = dragSlot = &engine.slot (v[(size_t) viewIndex]);
-        dragGrabDx = kCardW / 2; dragGrabDy = kCardH / 2; dragX = x; dragY = cardsViewport().getCentreY() + 40;
-        dragShift (shift);
+        pressSlot = dragSlot = &engine.slot (index);
+        dragGrabDx = kCardW / 2; dragGrabDy = kCardH / 2; dragX = x; dragY = y;
         repaint();
     }
-    void cancelDragForTest() { dragSlot = pressSlot = nullptr; endDragView (false); repaint(); }
+    void cancelDragForTest() { dragSlot = pressSlot = nullptr; repaint(); }
     int chainXForTest (int contentX) const { return cardsViewport().getX() + contentX - chainScroll; }
+    int rowYForTest (int row) const { return rowCentreY (row); }
+    // catena espansa (solo con lo split): i due rami uno sopra l'altro, sopra al modulo aperto
+    bool expanded = false;
+    void setExpanded (bool);
+    // copia nell'altro ramo (il tasto che compare passando sopra una card di un ramo)
+    bool canCopy (int index) const;
+    void copyToOtherLane (int index);
+    // dove entra un modulo col + della libreria: ramo e posizione
+    struct Gap { int lane = 0, pos = 0, x = 0; };
+    Gap libraryTarget (const juce::String& id) const;
+    void hoverForTest (juce::Point<int> p) { hover = p; repaint(); }
+    juce::Point<int> libAddCentreForTest (const juce::String& id) const
+    {
+        for (auto& r : libRows) if (r.m->id == id) return r.add.getCentre();
+        return {};
+    }
     // split: ramo che si sta guardando (1 = A, 2 = B) quando la catena è divisa
     int viewLane = 1;
     void toggleSplit();            // divide, o riunisce (con conferma se l'altro ramo ha dei moduli)
@@ -282,24 +302,31 @@ private:
     juce::Rectangle<int> tunerArea() const { return { 0, kTopH + 1, kLibW, kTunerH }; }
     juce::Rectangle<int> tunerCloseArea() const { auto t = tunerArea(); return { t.getRight() - 25, t.getY() + 10, 20, 20 }; }
     juce::Rectangle<int> libArea() const { return { 0, kTopH + kTunerH + 2, kLibW, getHeight() - kTopH - kTunerH - 2 }; }
-    juce::Rectangle<int> chainArea() const { return { kLibW + 1, kTopH + 1, getWidth() - kLibW - 1, kChainH }; }
-    juce::Rectangle<int> wsArea() const { auto c = chainArea(); return { c.getX(), c.getBottom() + 1, c.getWidth(), getHeight() - c.getBottom() - 1 }; }
+    // la catena: una riga (68 px) o, espansa, due righe (il ramo b sotto) sopra al workspace, che non si sposta
+    juce::Rectangle<int> chainArea() const { return { kLibW + 1, kTopH + 1, getWidth() - kLibW - 1, expanded ? 2 * kChainH + 1 : kChainH }; }
+    juce::Rectangle<int> wsArea() const { const int y = kTopH + 1 + kChainH + 1; return { kLibW + 1, y, getWidth() - kLibW - 1, getHeight() - y }; }
+    int rowCentreY (int row) const { return kTopH + 1 + kChainH / 2 + row * (kChainH + 1); }   // riga 1 = ramo b (espansa)
     juce::Rectangle<int> wsToggleArea() const { auto w = wsArea(); return { w.getRight() - 16 - 104, w.getY() + (kWsHeadH - 26) / 2, 104, 26 }; }
     juce::Rectangle<int> splitBtnArea() const;   // tasto dello split, a sinistra nella catena
     juce::Rectangle<int> laneBtn (int lane) const;   // con lo split: i pulsanti "a" e "b" accanto
+    juce::Rectangle<int> expandBtn() const;          // e quello che espande la catena
     float laneEndX() const;                      // dove finisce la linea del ramo (poi la sua lettera)
     static constexpr int kBtn = 24, kLaneOff = 15;   // misura dei tasti; la linea di un ramo: 15 px sopra (A) o sotto (B) il centro
     juce::Rectangle<int> cardsViewport() const;
-    juce::Rectangle<int> cardRect (int viewIndex) const;   // in coordinate del componente (con lo scroll)
+    // le card che si vedono: indice nell'engine, riga (0, o 1 = ramo b nella catena espansa), x nel contenuto
+    struct Item { int index = -1, row = 0, x = 0; };
+    std::vector<Item> items() const;
+    juce::Rectangle<int> cardRectOf (const Item&) const;   // in coordinate del componente (con lo scroll)
     juce::Rectangle<int> markerRect() const;               // il punto di split tra le card
     int viewTrunk() const;                                 // card prima dello split (tutte, se la catena è unica)
     int itemX (int viewIndex) const;                       // x della card nel contenuto (senza scroll)
     int markerX() const;
+    int contentWidth() const;
+    int rowOfLane (int lane) const { return expanded && lane == 2 ? 1 : 0; }
+    int laneAtY (int y) const { return ! engine.isSplit() ? 0 : ! expanded ? viewLane : (y > kTopH + 1 + kChainH ? 2 : 1); }
     // punto di inserimento durante il trascinamento: ramo, posizione nel ramo, x nel contenuto
-    struct Gap { int lane = 0, pos = 0, x = 0; };
-    Gap gapAt (int x) const;
+    Gap gapAt (int x, int y) const;
     bool dropSlot (int index, Gap);   // false se non si è spostato
-    void moveByArrow (int index, int dir);
     void hint (const juce::String&);   // messaggio breve nella testata del workspace
     juce::String hintText;
     double hintUntilMs = 0;
@@ -311,25 +338,28 @@ private:
     void layoutLibrary();
 
     // catena
-    enum class Hit { none, led, card, left, right, remove, badge, marker };
-    std::pair<int, Hit> chainHit (juce::Point<int>) const;
+    enum class Hit { none, led, card, copy, remove, badge, marker };
+    struct ChainHit { int index = -1; Hit hit = Hit::none; juce::Rectangle<int> rect; };
+    ChainHit chainHit (juce::Point<int>) const;
+    static juce::Rectangle<int> copyRect (juce::Rectangle<int> card) { return { card.getRight() - 40, card.getY() + 4, 18, 20 }; }
+    const Slot* addedSlot = nullptr;   // appena aggiunto dalla libreria: la card si accende un attimo
+    double addedMs = 0;
     int chainScroll = 0, chainContentW = 0;
     Slot* pressSlot = nullptr;   // card premuta (clic o inizio di un trascinamento)
     Slot* dragSlot = nullptr;    // card che si sta trascinando
     int dragX = 0, dragY = 0, dragGrabDx = 0, dragGrabDy = 0;
     void paintCard (juce::Graphics&, int index, juce::Rectangle<int>, bool ghost, juce::Rectangle<int> frame);
-    // trascinamento con lo split: il ramo da cui è partito; shift tenuto premuto mostra l'altro ramo
-    int dragHomeLane = 0;
-    void dragShift (bool shift);
-    void endDragView (bool moved);
-    void setViewLane (int lane);   // solo la vista (durante un trascinamento la selezione non cambia)
-    void modifierKeysChanged (const juce::ModifierKeys&) override;
     // dove cadrebbe un modulo trascinato e se può entrare lì (un modulo per tipo in ogni ramo, la parte comune una volta)
     juce::String dropProblem (const juce::String& id, Gap, const Slot* except) const;
-    void paintDrop (juce::Graphics&, int x, const ModuleInfo&, const Slot* except);
-    juce::String dropHint (int x, const ModuleInfo&, const Slot* except) const;
+    void paintDrop (juce::Graphics&, Gap, bool ok);
+    juce::String dropHint (Gap, const ModuleInfo&, const Slot* except) const;
+    void paintChain (juce::Graphics&);
     bool markerPress = false, markerDragging = false;
-    int markerDragX = 0;
+    int markerDragX = 0, markerDragY = 0;
+    // catena espansa: il modulo aperto resta fermo e scurito (un'immagine), l'editor vero si nasconde
+    juce::Image wsShot;
+    juce::Rectangle<float> wsShotArea;
+    void takeWsShot();
     // trascinamento dalla libreria: il modulo entra solo se lo lasci sulla catena
     const ModuleInfo* libPress = nullptr;
     bool libDragging = false;
@@ -361,6 +391,9 @@ private:
     ui::ValueBox bpmBox;
     Dropdown sigBox;
     std::vector<double> taps;
+    void tap();
+    juce::String sentPreset;
+    bool sentDirty = false;
     float lastBpmParam = 120.0f;
     float cpuShown = 0;
 

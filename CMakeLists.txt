@@ -1,6 +1,6 @@
 # b-rig e tutti i plugin in una sola build (la usa l'installer; comoda anche in locale):
 #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target brig_release
-# brig_release = l'app + i plugin che l'installer può aggiungere; bsuite_tests = i programmi di test.
+# brig_release = l'app, b-rig come plugin e i plugin che l'installer può aggiungere; bsuite_tests = i programmi di test.
 # App e plugin si compilano anche ognuno dalla sua cartella.
 cmake_minimum_required(VERSION 3.22)
 include("${CMAKE_CURRENT_LIST_DIR}/shared/cmake/Suite.cmake")
@@ -32,4 +32,7 @@ if(APPLE)
     set_target_properties(BRigTests PROPERTIES OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
 endif()
 add_custom_target(brig_release)
-add_dependencies(brig_release BRig bsuite_plugins)
+add_dependencies(brig_release BRig BRigPlugin_VST3 bsuite_plugins)
+if(APPLE)
+    add_dependencies(brig_release BRigPlugin_AU)
+endif()

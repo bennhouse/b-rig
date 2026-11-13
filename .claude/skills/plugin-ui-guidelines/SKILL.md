@@ -101,6 +101,8 @@ L'utente ha bocciato la versione con tutti i controlli uguali in riga e colonne:
 ## Dentro b-rig
 - I plugin sono compilati anche dentro l'app b-rig con `SMP_IN_RIG=1`: `ui::kInRig` è vero. `drawTitle` non disegna il logotipo e il pannello about non si apre (il nome del modulo è già nell'app).
 - Strumenti che l'app ha già (tuner, metronomo) vanno nascosti con `ui::kInRig` (es. il tasto tuner di b-amp). Ogni plugin nuovo segue la stessa regola.
+- b-rig è anche un plugin (AU, VST3: `RigComponent` con `plugin` vero): niente metronomo, tempo, tap, setup né scorciatoie da tastiera; il tempo arriva dalla DAW ai moduli (il loro sync).
+- Tap tempo, in tutta la suite: il tempo cambia dal quarto tocco.
 
 ## Verifica
 Dopo ogni modifica: compilare, generare gli snapshot (`*Tests` scrive i PNG in `build/`), guardarli ingranditi e misurare i pixel quando la regola è numerica (es. margini uguali).

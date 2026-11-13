@@ -84,8 +84,8 @@ void BDelayProcessor::tapAt (double now)
 {
     if (! taps.empty() && now - taps.back() > 2500.0) taps.clear();   // pausa lunga: si ricomincia
     taps.push_back (now);
-    if (taps.size() > 4) taps.erase (taps.begin());
-    if (taps.size() < 2) return;
+    if (taps.size() > 5) taps.erase (taps.begin());
+    if (taps.size() < 4) return;   // dal quarto tocco, come gli altri tap della suite
     const double ms = (taps.back() - taps.front()) / (double) (taps.size() - 1);   // media degli ultimi intervalli
     auto set = [this] (const char* id, float v) { auto* p = apvts.getParameter (id); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (v)); p->endChangeGesture(); };
     set (BDelayIDs::sync, 0.0f);

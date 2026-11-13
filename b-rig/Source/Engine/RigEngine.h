@@ -80,6 +80,8 @@ public:
     bool canPlace (const juce::String& id, int lane, const Slot* except = nullptr) const;   // un modulo per tipo in ogni ramo
     Slot* addModuleAt (const juce::String& id, int lane, int pos);   // pos -1 = posizione logica nel ramo
     bool placeSlot (int index, int lane, int pos);                   // sposta (pos contata senza il modulo stesso)
+    // copia il modulo (stato compreso) nell'altro ramo, nella posizione logica; nullptr se lì non può entrare
+    Slot* copyToLane (int index, int lane);
     // divide la catena dalla DI: tutto va nel ramo A e il ramo B parte come copia (stesso suono finché non lo cambi)
     void splitChain();
     // riunisce i rami: resta keepLane, l'altro ramo si toglie
@@ -108,12 +110,19 @@ public:
     void cancelWidenMeasure() { cancelMeasure(); }
     bool isMeasuring (int what = kWiden | kBalance) const { return widenState.load() != 0 && (measureWhat.load() & what) != 0; }
     bool isMeasuringWiden() const { return isMeasuring (kWiden); }
+    float measureProgress() const { return measureProg.load(); }   // 0..1, quanto della registrazione è pronto
     int pollMeasure();                    // thread dei messaggi: le misure appena finite (kWiden / kBalance), 0 se nessuna
     bool pollWiden() { return (pollMeasure() & kWiden) != 0; }
     static float bestWidenLag (const float* a, const float* b, int n, double fs);   // ms; per i test
     // balance: ritardo (ms, > 0 = b in ritardo) e segno della correlazione migliori entro ±5 ms; guadagni che pareggiano
     struct BalanceResult { float alignMs = 0, gainA = 1, gainB = 1; };
     static BalanceResult measureBalance (const float* a, const float* b, int n, double fs);
+
+    // latenza della catena (campioni, thread dei messaggi): i moduli accesi prima dello split più il ramo più lento
+    int latencySamples() const;
+    // dentro una DAW (plugin): il playhead della DAW, impostato a ogni blocco prima di process(). I moduli
+    // sincronizzati al tempo seguono il progetto; senza, seguono i bpm del metronomo dell'app.
+    juce::AudioPlayHead* hostPlayHead = nullptr;
 
     juce::ValueTree saveRig() const;
     void loadRig (const juce::ValueTree&);
@@ -187,6 +196,7 @@ private:
     float delayCur[2] = { 0.0f, 0.0f }, gainCur[2] = { 1.0f, 1.0f }, widenSmooth = 0.001f;
     std::atomic<int> widenState { 0 };              // 0 niente, 1 registra, 2 pronto
     std::atomic<int> measureWhat { 0 };
+    std::atomic<float> measureProg { 0.0f };
     std::vector<float> capA, capB;
     int capPos = 0;
     std::vector<float> metroBuf;       // il click del metronomo: a parte, si somma dopo il limiter della chitarra

@@ -55,11 +55,14 @@ int main()
         const float ms = BDelayProcessor::leftMs (380.0f, true, 10, 120.0);
         check (std::abs (ms - 375.0f) < 0.01f, "sync: 1/8D a 120 bpm = 375 ms", ms);
     }
-    // 4. tap: tre click a 500 ms di distanza -> 500 ms (e sync spento)
+    // 4. tap: tre click non bastano; dal quarto (a 500 ms di distanza) -> 500 ms (e sync spento)
     {
         auto p = mk ({ { BDelayIDs::sync, 1.0f } });
-        for (int k = 0; k < 3; ++k) p->tapAt (1000.0 + 500.0 * k);   // orari dati: il test non dipende dalla velocità della macchina
         auto* t = p->apvts.getParameter (BDelayIDs::time);
+        const float before = t->getValue();
+        for (int k = 0; k < 3; ++k) p->tapAt (1000.0 + 500.0 * k);   // orari dati: il test non dipende dalla velocità della macchina
+        check (t->getValue() == before && p->apvts.getRawParameterValue (BDelayIDs::sync)->load() > 0.5f, "tap: tre tocchi non cambiano il tempo");
+        p->tapAt (2500.0);
         const float ms = t->convertFrom0to1 (t->getValue());
         std::printf ("       tap a 500 ms: %.1f ms\n", ms);
         check (std::abs (ms - 500.0f) < 15.0f && p->apvts.getRawParameterValue (BDelayIDs::sync)->load() < 0.5f, "tap: media degli intervalli, sync spento", ms);
