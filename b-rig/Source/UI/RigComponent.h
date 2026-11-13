@@ -174,6 +174,8 @@ public:
     static bool hasStartupChoice();
     // sessione: alla chiusura la catena com'è (anche non salvata) e il preset da cui viene; all'avvio si riapre
     static juce::File sessionFile();
+    // l'ultimo stato del plugin (catena, preset da cui viene, modifiche non salvate): un'istanza nuova riparte da lì
+    static juce::File pluginSessionFile() { return presetDir().getParentDirectory().getChildFile ("last-plugin-session.brig"); }
     void saveSession();
     bool saveSessionOnClose = false;   // solo l'app (non i test)
     static juce::String& bootPreset() { static juce::String s; return s; }
@@ -262,6 +264,9 @@ public:
     struct Gap { int lane = 0, pos = 0, x = 0; };
     Gap libraryTarget (const juce::String& id) const;
     void hoverForTest (juce::Point<int> p) { hover = p; repaint(); }
+    juce::Rectangle<int> stereoBoundsForTest() const { return stereoBtn.getBounds(); }
+    juce::Rectangle<int> workspaceForTest() const { return wsArea(); }
+    bool collapseOnClick (juce::Point<int>);   // catena espansa: un clic sul modulo sotto la richiude
     juce::Point<int> libAddCentreForTest (const juce::String& id) const
     {
         for (auto& r : libRows) if (r.m->id == id) return r.add.getCentre();

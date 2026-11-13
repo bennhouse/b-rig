@@ -8,18 +8,29 @@ RigPluginProcessor::RigPluginProcessor()
 {
     engine.metroOn = false;   // il metronomo è della DAW
     engine.diChannel = 0;
-    // un'istanza nuova parte dal preset scelto per l'avvio nell'app ("load at start-up"), altrimenti clean slate
+    // un'istanza nuova parte dal preset scelto per l'avvio nell'app ("load at start-up"); altrimenti dall'ultimo stato
+    // del plugin, com'era (anche modificato e non salvato); la prima volta clean slate. Un progetto della DAW poi
+    // rimette il suo stato con setStateInformation.
     const auto n = RigComponent::startupPreset();
-    if (RigComponent::hasStartupChoice() && n != RigComponent::kCleanSlate && RigComponent::loadPresetFile (engine, RigComponent::presetFile (n)))
-        presetName = n;
-    else
-        engine.clear();
+    bool loaded = false;
+    if (RigComponent::hasStartupChoice())
+    {
+        if (n != RigComponent::kCleanSlate && RigComponent::loadPresetFile (engine, RigComponent::presetFile (n))) { presetName = n; loaded = true; }
+    }
+    else if (auto x = juce::XmlDocument::parse (RigComponent::pluginSessionFile()))
+    {
+        const auto t = juce::ValueTree::fromXml (*x);
+        if (t.hasType ("BRIG")) { loadState (t); loaded = true; }
+    }
+    if (! loaded) engine.clear();
+    lastWritten = saveState().toXmlString();
     startTimerHz (4);
 }
 
 RigPluginProcessor::~RigPluginProcessor()
 {
     stopTimer();
+    writeSessionIfChanged();
     engine.clear();
     engine.collectGarbage();
 }
@@ -62,15 +73,27 @@ void RigPluginProcessor::timerCallback()
         if (t.isValid()) loadState (t);
     }
     engine.collectGarbage();
+    if (++sessionTick % 8 == 0) writeSessionIfChanged();   // ogni 2 s, solo se qualcosa è cambiato
     // la latenza dei moduli accesi (oversampling di b-amp, b-drop...): la DAW la compensa
     if (const int lat = engine.latencySamples(); lat != getLatencySamples()) setLatencySamples (lat);
+}
+
+void RigPluginProcessor::writeSessionIfChanged()
+{
+    const auto xml = saveState().toXmlString();
+    if (xml == lastWritten) return;
+    lastWritten = xml;
+    const auto f = RigComponent::pluginSessionFile();
+    f.getParentDirectory().createDirectory();
+    juce::TemporaryFile tmp (f);   // prima un file temporaneo, poi lo scambio: mai un file a metà
+    if (tmp.getFile().replaceWithText (xml)) tmp.overwriteTargetFileWithTemporary();
 }
 
 juce::ValueTree RigPluginProcessor::saveState() const
 {
     auto t = engine.saveRig();
     int sel = selectedIndex;
-    if (auto* ed = dynamic_cast<RigPluginEditor*> (getActiveEditor())) sel = engine.indexOf (ed->rig().getSelected());
+    if (auto* ed = dynamic_cast<RigPluginEditor*> (getActiveEditor()); ed != nullptr && ed->hasRig()) sel = engine.indexOf (ed->rig().getSelected());
     t.setProperty ("selected", sel, nullptr);
     t.setProperty ("preset", presetName, nullptr);
     t.setProperty ("dirty", presetDirty, nullptr);
@@ -90,6 +113,7 @@ void RigPluginProcessor::loadState (const juce::ValueTree& t)
     editorW = juce::jmax (1180, (int) t.getProperty ("editorW", 1180));
     editorH = juce::jmax (700, (int) t.getProperty ("editorH", 760));
     setLatencySamples (engine.latencySamples());
+    lastWritten = saveState().toXmlString();   // lo stato di un progetto riaperto non è una modifica
     if (onStateLoaded) onStateLoaded();
 }
 
@@ -136,6 +160,7 @@ RigPluginEditor::~RigPluginEditor()
     proc.selectedIndex = proc.engine.indexOf (rc->getSelected());
     proc.presetName = rc->currentPreset;
     proc.presetDirty = rc->dirty;
+    proc.writeSessionIfChanged();   // prima di chiudere l'interfaccia: saveState() legge ancora il modulo selezionato
     rc.reset();
 }
 

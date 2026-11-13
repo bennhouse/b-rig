@@ -672,8 +672,13 @@ bool RigEngine::metronome (int n) noexcept
             clickInc = (float) (juce::MathConstants<double>::twoPi * f / fs);
             clickInc2 = clickInc * 2.76f;   // seconda risonanza del legno
             clickPhase = clickPhase2 = 0;
-            clickDecay = decays[(size_t) clickSound];
-            clickEnv = (beat == 0 ? 0.9f : 0.6f) * juce::jlimit (0.0f, 1.0f, metroVolume.load (std::memory_order_relaxed));   // il doppio di prima al massimo
+            // volume: fino al 50 % (il default) come prima, lineare; sopra sale in dB fino a +14 dB al 100 % e il click
+            // dura fino a tre volte di più. Il limite morbido della somma lo tiene sotto 0 dBFS: al massimo è un click
+            // pieno e lungo, molto più forte, senza gracchiare
+            const float vol = juce::jlimit (0.0f, 1.0f, metroVolume.load (std::memory_order_relaxed));
+            const float over = juce::jmax (0.0f, (vol - 0.5f) * 2.0f);   // 0 fino al 50 %, 1 al 100 %
+            clickDecay = std::pow (decays[(size_t) clickSound], 1.0f / (1.0f + 2.0f * over));
+            clickEnv = (beat == 0 ? 0.9f : 0.6f) * juce::jmin (vol, 0.5f) * std::pow (10.0f, 14.0f * over / 20.0f);
             hatMix = (float) juce::jlimit (0.0, 1.0, 0.5 + juce::jlimit (-12.0f, 12.0f, metroPitch.load (std::memory_order_relaxed)) / 24.0);
             const double quarter = 60.0 / juce::jlimit (kMinBpm, kMaxBpm, bpm.load (std::memory_order_relaxed)) * fs;
             samplesToBeat += sig.second == 8 ? quarter * 0.5 : quarter;

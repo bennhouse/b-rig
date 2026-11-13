@@ -1417,8 +1417,9 @@ void RigComponent::resized()
         const int bw = sideBtnW(), bx = c.getRight() - kPad - 84 - bw;
         stereoBtn.setVisible (engine.isSplit());
         widenBtn.setVisible (engine.isSplit());
-        stereoBtn.setBounds (bx, c.getCentreY() - 3 - kControlH, bw, kControlH);
-        widenBtn.setBounds (bx, c.getCentreY() + 3, bw, kControlH);
+        // sempre sulla prima riga: con la catena espansa non si spostano
+        stereoBtn.setBounds (bx, rowCentreY (0) - 3 - kControlH, bw, kControlH);
+        widenBtn.setBounds (bx, rowCentreY (0) + 3, bw, kControlH);
     }
     for (auto* c : std::initializer_list<juce::Component*> { infoOverlay.get(), setup.get(), presets.get(), welcome.get() })
         if (c != nullptr) c->setBounds (getLocalBounds());
@@ -2041,14 +2042,12 @@ void RigComponent::setExpanded (bool on)
     on = on && engine.isSplit();
     if (on == expanded) return;
     expanded = on;
-    if (expanded) takeWsShot();
-    else
+    if (! expanded)
     {
         wsShot = {};
         if (editor != nullptr) editor->setVisible (true);
     }
-    chainContentW = contentWidth();
-    chainScroll = juce::jlimit (0, juce::jmax (0, chainContentW - cardsViewport().getWidth()), chainScroll);
+    resized();   // espansa: rebuildEditor() fa l'immagine scurita del modulo e nasconde l'editor
     repaint();
 }
 
@@ -2061,6 +2060,14 @@ void RigComponent::takeWsShot()
     wsShot = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
     wsShotArea = getLocalArea (editor.get(), editor->getLocalBounds().toFloat());
     editor->setVisible (false);
+}
+
+// catena espansa: un clic sul modulo (scurito) sotto la catena la richiude
+bool RigComponent::collapseOnClick (juce::Point<int> p)
+{
+    if (! expanded || ! wsArea().contains (p) || chainArea().contains (p)) return false;
+    setExpanded (false);
+    return true;
 }
 
 void RigComponent::copyToOtherLane (int index)
@@ -2160,6 +2167,7 @@ void RigComponent::mouseDown (const juce::MouseEvent& e)
     pressSlot = dragSlot = nullptr; markerPress = markerDragging = false;
     if (tunerArea().contains (p)) { setTunerActive (! engine.tunerOn.load()); return; }
     if (splitBtnArea().contains (p)) { toggleSplit(); return; }
+    if (collapseOnClick (p)) return;
     if (engine.isSplit())
     {
         for (int l = 1; l <= 2; ++l) if (laneBtn (l).contains (p)) { showLane (l); return; }
@@ -2726,7 +2734,7 @@ void RigComponent::paintChain (juce::Graphics& g)
 
     // la linea del segnale, senza interruzioni: passa dietro le card (che la coprono). Con lo split, al punto di
     // diramazione sale (ramo a) o scende (ramo b) di kLaneOff e attraversa le card del ramo a quell'altezza, fino alla
-    // lettera del ramo. Espansa: a sale come sempre; b scende allo stesso modo e poi in verticale fino alla sua riga
+    // lettera del ramo. Espansa: a sale come sempre; b scende con una sola diagonale fino alla sua riga
     {
         const float left = (float) vp.getX() - 6.0f;
         juce::Graphics::ScopedSaveState ss (g);
@@ -2747,12 +2755,11 @@ void RigComponent::paintChain (juce::Graphics& g)
             if (x0 > left) g.fillRect (left, cy, x0 - left, 1.0f);
             auto branch = [&] (int lane)
             {
-                const float yl = cy + (lane == 1 ? -(float) kLaneOff : (float) kLaneOff);
                 const float yRow = (float) rowCentreY (rowOfLane (lane)) + (lane == 1 ? -(float) kLaneOff : (float) kLaneOff);
+                // espansa: il ramo b scende con una sola diagonale fino alla sua riga
                 juce::Path p;
                 p.startNewSubPath (x0, cy + 0.5f);
-                p.lineTo (x1, yl + 0.5f);
-                if (yRow > yl) p.lineTo (x1, yRow + 0.5f);
+                p.lineTo (x1, yRow + 0.5f);
                 g.setColour (h ? labelHover : frame);
                 g.strokePath (p, juce::PathStrokeType (1.0f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
                 g.setColour (frame);

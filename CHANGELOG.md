@@ -11,12 +11,15 @@ All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; e
 - b-rig: a copy button on the cards of a lane (on hover, left of the `x`) that puts the same module with its settings in the other lane.
 - b-rig: hovering the `+` of the library shows where the module would go; after the click the new card lights up and a line says where it went.
 - b-rig app: keys `m` and `k` (metronome on/off) and `l` (tap tempo).
+- b-rig plugin: a new instance reopens the last state of the plugin (chain, controls, preset and unsaved changes) without saving any preset.
 
 ### Changed
 - b-rig: shift no longer switches lane while dragging (the expanded chain replaces it); the `< >` arrows are gone from the cards.
 - b-rig: `balance` fills from left to right while it measures, instead of blinking.
 - b-rig: a changed preset keeps its name, in yellow, instead of showing `unsaved`.
 - Tap tempo starts from the fourth tap in b-rig and b-delay, as in b-aftercab.
+- b-rig: the metronome at 100 % is much louder (about +16 dB over 50 %, the default); up to 50 % nothing changes.
+- b-rig: in the expanded chain lane b forks with a single diagonal, `stereo` and `balance` no longer move when you switch lane, and a click on the module underneath closes it.
 
 ### Fixed
 - Installer: the logotype and the colour squares of the background no longer end up under the text box and the Print button.

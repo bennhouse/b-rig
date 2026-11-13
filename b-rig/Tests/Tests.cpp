@@ -168,10 +168,18 @@ int main()
         }
         check (pk[0] > 0.3f && pk[1] > 0.1f && pk[2] > 0.3f, "metronomo: beep, hat e wood suonano", pk[1]);
         { rig::RigEngine d; check (std::abs (d.metroVolume.load() - 0.5f) < 1e-6f, "metronomo: volume di partenza 50 %"); }
-        e.metroOn = false; runEngine (e, 256, [] (int) { return 0.0f; });
-        e.metroSound = 0; e.metroVolume = 0.25f; e.metroOn = true;
-        const auto quiet = runEngine (e, 4800, [] (int) { return 0.0f; });
-        check (std::abs (quiet.getMagnitude (0, 0, 4800) / pk[0] - 0.25f) < 0.02f, "metronomo: volume al 25 %", quiet.getMagnitude (0, 0, 4800) / pk[0]);
+        // volume: fino al 50 % lineare; al 100 % il click è molto più forte (più pieno e più lungo), sempre sotto 0 dBFS
+        auto clickAt = [&] (float vol)
+        {
+            e.metroOn = false; runEngine (e, 256, [] (int) { return 0.0f; });
+            e.metroSound = 0; e.metroVolume = vol; e.metroOn = true;
+            return runEngine (e, 4800, [] (int) { return 0.0f; });
+        };
+        const auto half = clickAt (0.5f), quiet = clickAt (0.25f), full = clickAt (1.0f);
+        check (std::abs (quiet.getMagnitude (0, 0, 4800) / half.getMagnitude (0, 0, 4800) - 0.5f) < 0.02f, "metronomo: al 25 % metà del 50 %", quiet.getMagnitude (0, 0, 4800) / half.getMagnitude (0, 0, 4800));
+        const double loud = rmsDb (full, 0, 0, 4800) - rmsDb (half, 0, 0, 4800);
+        std::printf ("       metronomo al 100 %%: %+.1f dB rispetto al 50 %%, picco %.3f\n", loud, full.getMagnitude (0, 0, 4800));
+        check (loud > 9.0 && full.getMagnitude (0, 0, 4800) < 1.0f, "metronomo al 100 %: molto più forte del 50 %, senza superare 0 dBFS", loud);
         auto* ph = e.addModule ("aftercab");
         check (ph != nullptr, "modulo con playhead del metronomo");
     }
@@ -600,8 +608,11 @@ int main()
             check (ui.canCopy (indexOfId (e, "delay")), "b-delay solo nel ramo a: si può copiare nel ramo b");
             check (! ui.canCopy (indexOfId (e, "comp")), "b-comp nella parte comune: niente tasto copia");
             check (! ui.canCopy (e.laneStart (1)), "b-distort già nell'altro ramo: niente tasto copia");
+            const auto stereoAt = ui.stereoBoundsForTest();
             ui.setExpanded (true);
             check (ui.expanded, "catena espansa con lo split");
+            ui.showLane (2); ui.showLane (1);
+            check (ui.stereoBoundsForTest() == stereoAt, "catena espansa, cambiando ramo: stereo e balance restano dove sono");
             pump (60);
             savePng (ui, "gui_brig_expanded.png");
             // a metà del trascinamento: b-delay dalla riga del ramo a verso la riga del ramo b
@@ -610,6 +621,8 @@ int main()
             ui.cancelDragForTest();
             const bool moved = ui.dropToForTest (indexOfId (e, "delay"), 2, 0);
             check (moved && e.laneHas (2, "delay") && ! e.laneHas (1, "delay") && ui.viewLane == 2, "catena espansa: b-delay passa nel ramo b");
+            check (ui.collapseOnClick (ui.workspaceForTest().getCentre().translated (0, 200)) && ! ui.expanded, "catena espansa: un clic sul modulo sotto la richiude");
+            check (ui.stereoBoundsForTest() == stereoAt, "richiusa: stereo e balance dove erano");
             ui.setExpanded (false);
             ui.showLane (1);
             check (! ui.inChain ("delay") && ui.inChain ("distort") && ui.inChain ("comp"), "ramo a: b-delay di nuovo libero in libreria, b-comp in comune");
@@ -624,7 +637,7 @@ int main()
                 int copyIdx = -1; for (int i = e.laneStart (1); i < e.laneStart (1) + e.laneSize (1); ++i) if (e.slot (i).info->id == "delay") copyIdx = i;
                 const float want = d.proc->getParameters()[0]->getValue();   // il valore com'è dopo l'arrotondamento del parametro
                 check (e.numSlots() == n0 + 1 && copyIdx >= 0 && std::abs (e.slot (copyIdx).proc->getParameters()[0]->getValue() - want) < 1.0e-4f
-                       && std::abs (want - juce::jlimit (0.0f, 1.0f, want)) < 1.0e-6f && want != d.proc->getParameters()[0]->getDefaultValue(),
+                       && std::abs (want - juce::jlimit (0.0f, 1.0f, want)) < 1.0e-6f && std::abs (want - d.proc->getParameters()[0]->getDefaultValue()) > 1.0e-6f,
                        "copia: b-delay anche nel ramo a, con gli stessi valori");
                 check (! ui.canCopy (copyIdx), "dopo la copia: il tasto copia sparisce (l'altro ramo ce l'ha)");
                 e.removeSlot (copyIdx);
@@ -796,6 +809,9 @@ int main()
     }
 
     // 9. b-rig come plugin: mono -> stereo, il tempo della DAW ai moduli, la catena e il preset nel progetto
+    auto plugDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("brig_plugin_test");
+    plugDir.deleteRecursively(); plugDir.createDirectory();
+    rig::RigComponent::presetDirOverride() = plugDir.getChildFile ("Presets");   // mai i file veri dell'utente
     {
         struct Head final : juce::AudioPlayHead
         {
@@ -838,5 +854,27 @@ int main()
         }
         p.releaseResources();
     }
+    // salvataggio fantasma del plugin: un'istanza nuova ritrova lo stato dell'ultima chiusa (anche non salvato come
+    // preset), senza creare preset; un progetto riaperto e richiuso senza modifiche non lo sovrascrive
+    {
+        rig::RigComponent::pluginSessionFile().deleteFile();
+        {
+            rig::RigPluginProcessor a;
+            check (a.engine.numSlots() == 0 && a.presetName == "clean slate", "plugin, prima volta: clean slate");
+            a.engine.addModule ("comp"); a.engine.addModule ("verb");
+            a.presetName = "crunch rig"; a.presetDirty = true;
+        }
+        rig::RigPluginProcessor b;
+        check (b.engine.numSlots() == 2 && b.engine.slot (1).info->id == "verb" && b.presetName == "crunch rig" && b.presetDirty,
+               "plugin riaperto: la catena e il preset modificato di prima", b.engine.numSlots());
+        check (rig::RigComponent::listPresets().size() == 1, "nessun preset creato in automatico", (int) rig::RigComponent::listPresets().size());
+        juce::MemoryBlock old;
+        { rig::RigPluginProcessor x; x.engine.clear(); x.engine.addModule ("delay"); x.getStateInformation (old); }   // ora l'ultimo stato è b-delay
+        { rig::RigPluginProcessor proj; proj.setStateInformation (old.getData(), (int) old.getSize()); }
+        rig::RigPluginProcessor c;
+        check (c.engine.numSlots() == 1 && c.engine.slot (0).info->id == "delay", "un progetto aperto e chiuso senza modifiche non cambia l'ultimo stato");
+    }
+    rig::RigComponent::presetDirOverride() = juce::File();
+    plugDir.deleteRecursively();
     return finish();
 }

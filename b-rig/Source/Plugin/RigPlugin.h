@@ -43,11 +43,16 @@ public:
 
     juce::ValueTree saveState() const;
     void loadState (const juce::ValueTree&);
+    // salvataggio fantasma: lo stato com'è (anche modificato e non salvato come preset) in last-plugin-session.brig,
+    // riscritto solo quando cambia; un'istanza nuova riparte da lì. Nessun preset nuovo viene creato.
+    void writeSessionIfChanged();
 
 private:
     void timerCallback() override;
     juce::CriticalSection pendingLock;
     juce::ValueTree pending;               // stato arrivato fuori dal thread dei messaggi: si applica nel timer
+    juce::String lastWritten;              // l'ultimo stato scritto (o caricato): si riscrive solo se cambia
+    int sessionTick = 0;
 };
 
 class RigPluginEditor final : public juce::AudioProcessorEditor
@@ -57,6 +62,7 @@ public:
     ~RigPluginEditor() override;
     void resized() override;
     RigComponent& rig() { return *rc; }
+    bool hasRig() const { return rc != nullptr; }
 
 private:
     RigPluginProcessor& proc;

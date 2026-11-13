@@ -28,7 +28,7 @@ The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where yo
 - **Split:** divide the chain into two parallel lanes with different modules (two amps, a delay on one side and a reverb on the other), from any point. Expand the chain to see both lanes one above the other and drag modules between them, or copy a module to the other lane with its settings. The lanes play left and right (`stereo`, with a measured delay on one side that keeps the mono sum full) or summed (`mono`), and `balance` lines up their phase and evens out their volume.
 - **Safe by design:** b-amp stays muted until there is a cab after it, so a raw amp never blasts into your headphones, and a limiter protects the output.
 - **Tuner, metronome** (volume and pitch; `m` or `k` switches it, `l` taps the tempo), **presets** with colours, rename, import and export, `save` and `new` in the top bar, **undo / redo** for every change, and audio settings kept between sessions. The app reopens where you left it, unsaved changes included. Presets live outside the app, so updates never touch them.
-- **In a DAW:** b-rig as an AU or VST3 plugin, with the same presets as the app. The tempo is the project's: modules with a tempo setting follow it when set to sync.
+- **In a DAW:** b-rig as an AU or VST3 plugin, with the same presets as the app; a new instance reopens the last state you left, unsaved changes included. The tempo is the project's: modules with a tempo setting follow it when set to sync.
 - **Updates:** once a day b-rig and the plugins check for a new release; a small notice in the corner opens the download. The about panel (click the name) also has `check for updates`.
 
 More in [b-rig/README.md](b-rig/README.md).
