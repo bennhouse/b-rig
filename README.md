@@ -4,13 +4,13 @@
 
 Its installer can also add **the same effects as plugins** for your DAW: you choose which ones, and whether you want them as Audio Unit, VST3 or both.
 
-**License:** [GNU AGPLv3](LICENSE) · **Status:** beta · **Download:** [latest release](https://github.com/bennhouse/b-rig/releases)
+**License:** [GNU AGPLv3](LICENSE) · **Status:** beta · **Download:** [latest release](https://github.com/bennhouse/b-rig/releases/latest)
 
 <p align="center"><img src="docs/b-rig-showcase.png" alt="b-rig and its plugins" width="100%"></p>
 
 ## Install
 
-1. Download `b-rig-<version>-macos-arm64.dmg` from the [releases page](https://github.com/bennhouse/b-rig/releases) (macOS 11 or later, Apple Silicon).
+1. Download `b-rig-<version>-macos-arm64.dmg` from the [latest release](https://github.com/bennhouse/b-rig/releases/latest) (macOS 11 or later, Apple Silicon).
 2. Open it and double-click **Install b-rig**. The installer is not notarized yet, so the first time macOS blocks it: open **System Settings → Privacy & Security** and click **Open Anyway**, then open it again.
 3. On the **Installation Type** page b-rig is always selected. Under **Plugins for your DAW**, tick the plugins you want and, for each one, **Audio Unit** (Logic Pro, GarageBand), **VST3** (Ableton Live, Reaper, Cubase…) or both. Leave them all unticked for the app only.
 
@@ -94,7 +94,7 @@ That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`) and every p
 
 ## Releases
 
-One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (pre-releases during the beta). On a Mac, `tools/release.sh 0.2.0` sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
+One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (marked "beta" in its title for now). On a Mac, `tools/release.sh 0.2.0` sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
 
 ## License
 
