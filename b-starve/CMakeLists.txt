@@ -41,7 +41,7 @@ set(BSTARVE_SOURCES
 
 target_sources(BStarve PRIVATE ${BSTARVE_SOURCES})
 target_include_directories(BStarve PRIVATE Source ../shared)
-target_compile_definitions(BStarve PRIVATE SMP_ACCENT_ARGB=0xfffb7185)   
+target_compile_definitions(BStarve PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_STARVE)   
 target_compile_definitions(BStarve PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BStarve
     PRIVATE BStarveAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BStarve
 juce_add_console_app(BStarveTests PRODUCT_NAME "BStarveTests")
 target_sources(BStarveTests PRIVATE Tests/Tests.cpp ${BSTARVE_SOURCES})
 target_include_directories(BStarveTests PRIVATE Source ../shared)
-target_compile_definitions(BStarveTests PRIVATE SMP_ACCENT_ARGB=0xfffb7185 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BStarveTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_STARVE JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BStarveTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BStarveTests PRIVATE BStarveAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

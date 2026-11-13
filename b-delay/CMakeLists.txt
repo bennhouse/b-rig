@@ -41,7 +41,7 @@ set(BDELAY_SOURCES
 
 target_sources(BDelay PRIVATE ${BDELAY_SOURCES})
 target_include_directories(BDelay PRIVATE Source ../shared)
-target_compile_definitions(BDelay PRIVATE SMP_ACCENT_ARGB=0xff818cf8)   
+target_compile_definitions(BDelay PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DELAY)   
 target_compile_definitions(BDelay PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BDelay
     PRIVATE BDelayAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BDelay
 juce_add_console_app(BDelayTests PRODUCT_NAME "BDelayTests")
 target_sources(BDelayTests PRIVATE Tests/Tests.cpp ${BDELAY_SOURCES})
 target_include_directories(BDelayTests PRIVATE Source ../shared)
-target_compile_definitions(BDelayTests PRIVATE SMP_ACCENT_ARGB=0xff818cf8 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BDelayTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DELAY JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BDelayTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BDelayTests PRIVATE BDelayAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

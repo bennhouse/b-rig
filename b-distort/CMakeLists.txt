@@ -40,7 +40,7 @@ set(BDISTORT_SOURCES
 
 target_sources(BDistort PRIVATE ${BDISTORT_SOURCES})
 target_include_directories(BDistort PRIVATE Source ../shared)
-target_compile_definitions(BDistort PRIVATE SMP_ACCENT_ARGB=0xffff4d4d)   # accento rosso
+target_compile_definitions(BDistort PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DISTORT)   # accento rosso
 target_compile_definitions(BDistort PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BDistort
     PRIVATE BDistortAssets juce::juce_audio_utils juce::juce_dsp
@@ -50,7 +50,7 @@ target_link_libraries(BDistort
 juce_add_console_app(BDistortTests PRODUCT_NAME "BDistortTests")
 target_sources(BDistortTests PRIVATE Tests/Tests.cpp ${BDISTORT_SOURCES})
 target_include_directories(BDistortTests PRIVATE Source ../shared)
-target_compile_definitions(BDistortTests PRIVATE SMP_ACCENT_ARGB=0xffff4d4d JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BDistortTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DISTORT JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BDistortTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BDistortTests PRIVATE BDistortAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

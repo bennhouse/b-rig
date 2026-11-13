@@ -41,7 +41,7 @@ set(BSYNTHESIA_SOURCES
 
 target_sources(BSynthesia PRIVATE ${BSYNTHESIA_SOURCES})
 target_include_directories(BSynthesia PRIVATE Source ../shared)
-target_compile_definitions(BSynthesia PRIVATE SMP_ACCENT_ARGB=0xffe2e8f0)   
+target_compile_definitions(BSynthesia PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_SYNTHESIA)   
 target_compile_definitions(BSynthesia PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BSynthesia
     PRIVATE BSynthesiaAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BSynthesia
 juce_add_console_app(BSynthesiaTests PRODUCT_NAME "BSynthesiaTests")
 target_sources(BSynthesiaTests PRIVATE Tests/Tests.cpp ${BSYNTHESIA_SOURCES})
 target_include_directories(BSynthesiaTests PRIVATE Source ../shared)
-target_compile_definitions(BSynthesiaTests PRIVATE SMP_ACCENT_ARGB=0xffe2e8f0 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BSynthesiaTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_SYNTHESIA JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BSynthesiaTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BSynthesiaTests PRIVATE BSynthesiaAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

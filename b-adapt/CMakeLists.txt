@@ -41,7 +41,7 @@ set(BADAPT_SOURCES
 
 target_sources(BAdapt PRIVATE ${BADAPT_SOURCES})
 target_include_directories(BAdapt PRIVATE Source ../shared)
-target_compile_definitions(BAdapt PRIVATE SMP_ACCENT_ARGB=0xffde50c9)   
+target_compile_definitions(BAdapt PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_ADAPT)   
 target_compile_definitions(BAdapt PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BAdapt
     PRIVATE BAdaptAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BAdapt
 juce_add_console_app(BAdaptTests PRODUCT_NAME "BAdaptTests")
 target_sources(BAdaptTests PRIVATE Tests/Tests.cpp ${BADAPT_SOURCES})
 target_include_directories(BAdaptTests PRIVATE Source ../shared)
-target_compile_definitions(BAdaptTests PRIVATE SMP_ACCENT_ARGB=0xffde50c9 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BAdaptTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_ADAPT JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BAdaptTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BAdaptTests PRIVATE BAdaptAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

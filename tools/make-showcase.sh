@@ -15,7 +15,7 @@ shots=(
     b-drop/build/b-drop.png
     b-focus/build/gui_bfocus.png
     b-freshstrings/build/b-freshstrings.png
-    b-tight/build/gui_btight.png
+    b-comp/build/gui_bcomp.png
     b-wire/build/gui_bwire.png
     b-starve/build/gui_bstarve.png
     b-distort/build/gui_bdistort.png

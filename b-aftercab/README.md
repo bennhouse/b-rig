@@ -34,7 +34,8 @@ in -> EQ -> compressor -> spread (doubler) -> delverb -> out
   - Delay time: two controls side by side.
     - **BPM box** (left), a value box like the others: a single click switches DAW sync on/off. With sync on it is filled yellow and reads "sync"; with sync off it is grey and shows the BPM in yellow, with a faint "tap to sync" hint just above it. Drag, arrows or wheel set the BPM, which also switches sync off. A fast double-click (under 250 ms) lets you type the BPM.
     - **tap** (right): yellow with black text while sync is off; tap tempo starts at the 4th tap if the last four fall within 3 s. Dimmed and inactive while sync is on.
-- **Channel layouts**: 1→1, 1→2, 2→2. The UI adapts; the spread section only appears for mono→stereo. With spread off, the delay box and `=` are disabled and the alignment status is hidden.
+- **Channel layouts**: 1→1, 1→2, 2→2. Inside b-rig it runs mono → stereo (after the cab the signal is mono), so `spread` and the phase alignment work there as on a mono track in a DAW.
+- **Channel layouts (detail)**: 1→1, 1→2, 2→2. The UI adapts; the spread section only appears for mono→stereo. With spread off, the delay box and `=` are disabled and the alignment status is hidden.
 
 ## Defaults
 

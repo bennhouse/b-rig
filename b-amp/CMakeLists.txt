@@ -41,7 +41,7 @@ set(BAMP_SOURCES
 
 target_sources(BAmp PRIVATE ${BAMP_SOURCES})
 target_include_directories(BAmp PRIVATE Source ../shared)
-target_compile_definitions(BAmp PRIVATE SMP_ACCENT_ARGB=0xffe11d48)   
+target_compile_definitions(BAmp PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_AMP)   
 target_compile_definitions(BAmp PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BAmp
     PRIVATE BAmpAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BAmp
 juce_add_console_app(BAmpTests PRODUCT_NAME "BAmpTests")
 target_sources(BAmpTests PRIVATE Tests/Tests.cpp ${BAMP_SOURCES})
 target_include_directories(BAmpTests PRIVATE Source ../shared)
-target_compile_definitions(BAmpTests PRIVATE SMP_ACCENT_ARGB=0xffe11d48 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BAmpTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_AMP JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BAmpTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BAmpTests PRIVATE BAmpAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

@@ -40,7 +40,7 @@ set(BFOCUS_SOURCES
 
 target_sources(BFocus PRIVATE ${BFOCUS_SOURCES})
 target_include_directories(BFocus PRIVATE Source ../shared)
-target_compile_definitions(BFocus PRIVATE SMP_ACCENT_ARGB=0xff3d8bff)   # accento blu elettrico
+target_compile_definitions(BFocus PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_FOCUS)   # accento blu elettrico
 target_compile_definitions(BFocus PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BFocus
     PRIVATE BFocusAssets juce::juce_audio_utils juce::juce_dsp
@@ -50,7 +50,7 @@ target_link_libraries(BFocus
 juce_add_console_app(BFocusTests PRODUCT_NAME "BFocusTests")
 target_sources(BFocusTests PRIVATE Tests/Tests.cpp ${BFOCUS_SOURCES})
 target_include_directories(BFocusTests PRIVATE Source ../shared)
-target_compile_definitions(BFocusTests PRIVATE SMP_ACCENT_ARGB=0xff3d8bff)
+target_compile_definitions(BFocusTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_FOCUS)
 target_compile_definitions(BFocusTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BFocusTests PRIVATE BFocusAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

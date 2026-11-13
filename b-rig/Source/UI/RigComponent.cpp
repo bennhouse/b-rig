@@ -375,7 +375,8 @@ public:
         head ("b-amp needs a cab IR");
         para ("b-rig does not include cabinet impulse responses (IRs). To hear b-amp, put b-blend after it and load your own "
               "IR files (.wav) in its slots: click \"load A\" and choose the folder with your IRs.");
-        para ("Until a cab with an IR follows it, b-amp stays muted (safe muted), so the raw amp never reaches your speakers.");
+        para ("Until b-blend follows it, b-amp stays muted (safe muted), so the raw amp never reaches your speakers. "
+              "b-blend without an IR plays nothing: the amp is armed as soon as b-blend is after it, and you hear it once an IR is loaded.");
         head ("Getting started");
         para ("The chain starts empty. Add modules from the library on the left: click + or drag them onto the chain. "
               "Choose your audio interface and the input of the guitar in setup.");
@@ -584,7 +585,7 @@ public:
     {
         const auto keep = juce::isPositiveAndBelow (selectedRow, (int) list.size()) ? list[(size_t) selectedRow].name : juce::String();
         list = listPresets();
-        startupName = startupPreset();
+        startupName = hasStartupChoice() ? startupPreset() : juce::String();
         selectedRow = -1;
         if (keep.isNotEmpty()) selectByName (keep);
         renaming = -1; field.setVisible (false);
@@ -638,7 +639,8 @@ public:
     juce::Rectangle<int> rowRect (int i) const { return { colX(), listY() + (i - scroll) * kRow, colW(), kRow }; }
     juce::Rectangle<int> delRect (int i) const { auto r = rowRect (i); return { r.getRight() - 30, r.getY() + 5, 22, kRow - 10 }; }
     juce::Rectangle<int> penRect (int i) const { return delRect (i).translated (-28, 0); }
-    juce::Rectangle<int> fieldRect (int i) const { auto r = rowRect (i); const int w = (r.getWidth() - 60) / 2; return { r.getRight() - 40 - w, r.getY(), w, r.getHeight() }; }
+    // il campo del nome sta dove c'è il nome (allineato a sinistra): scrivendo, il testo è già al suo posto
+    juce::Rectangle<int> fieldRect (int i) const { auto r = rowRect (i); return { r.getX() + 32 - 7, r.getY() + 4, r.getWidth() - 32 + 7 - 70, r.getHeight() - 8 }; }
     bool renamable (int i) const { return list[(size_t) i].name != kCleanSlate; }   // tutti i preset salvati, anche "default"
     void resized() override
     {
@@ -750,7 +752,7 @@ public:
         const bool wasStartup = startupPreset() == e.name;
         if (! presetFile (e.name).moveToTrash()) presetFile (e.name).deleteFile();   // nel Cestino: si può sempre recuperare
         indexRemove (e.name);
-        if (wasStartup) setStartupPreset (kCleanSlate);   // il preset d'avvio non c'è più: si parte da una catena vuota
+        if (wasStartup) setStartupPreset ({});   // il preset d'avvio non c'è più: all'avvio si riapre la sessione di prima
         if (wasCurrent) { owner.currentPreset = kCleanSlate; owner.markDirty(); }
         pushUndo ([this, e, content, wasCurrent, wasDirty, wasStartup]
         {
@@ -760,7 +762,7 @@ public:
             if (wasCurrent) { owner.currentPreset = e.name; if (wasDirty) owner.markDirty(); else owner.clearDirty(); }
         });
         refresh();
-        flash (wasStartup ? "deleted, the app now starts from clean slate" : "deleted");
+        flash (wasStartup ? "deleted, the app now reopens where you left it" : "deleted");
     }
     // per i test
     std::vector<PresetEntry>& entries() { return list; }
@@ -910,9 +912,13 @@ RigComponent::RigComponent (RigEngine& e, juce::AudioDeviceManager* devices) : e
     presetsBtn.caption = "presets";
     presetsBtn.onClick = [this] { showPresets(); };
     saveBtn.caption = "save";
-    saveBtn.onClick = [this] { saveFromTopBar(); };
-    saveBtn.setEnabled (false);   // si accende alla prima modifica
+    saveBtn.onClick = [this] { saveCurrent(); };
+    saveBtn.setEnabled (false);   // save e new si accendono alla prima modifica
     addAndMakeVisible (saveBtn);
+    newBtn.caption = "new";
+    newBtn.onClick = [this] { if (dirty) saveFromTopBar(); };
+    newBtn.setEnabled (false);
+    addAndMakeVisible (newBtn);
     paramWatch = std::make_unique<ParamWatch> (*this);
     inputWatch = std::make_unique<InputWatch> (lastInputMs);
     juce::Desktop::getInstance().addGlobalMouseListener (inputWatch.get());
@@ -969,27 +975,35 @@ RigComponent::RigComponent (RigEngine& e, juce::AudioDeviceManager* devices) : e
     redoBtn.caption = "redo";
     undoBtn.onClick = [this] { undoRig(); };
     redoBtn.onClick = [this] { redoRig(); };
-    // split: "stereo" = a a sinistra e b a destra invece della somma; "widen" = b un poco in ritardo, al tempo misurato
+    // fine dei rami: "stereo" / "mono" (sempre acceso: dice come escono i rami) e, sotto, "balance"
     stereoBtn.caption = "stereo";
-    stereoBtn.isOn = [this] { return engine.wide.load(); };
-    stereoBtn.onClick = [this] { engine.wide = ! engine.wide.load(); markDirty(); historyPending = true; historyChangeMs = juce::Time::getMillisecondCounterHiRes(); };
+    stereoBtn.isOn = [] { return true; };
+    stereoBtn.onClick = [this]
+    {
+        engine.wide = ! engine.wide.load();
+        stereoBtn.caption = engine.wide.load() ? "stereo" : "mono";
+        markDirty(); historyPending = true; historyChangeMs = juce::Time::getMillisecondCounterHiRes();
+        hint (engine.wide.load() ? "stereo: lane a left, lane b right" : "mono: the lanes are summed");
+        hintUntilMs = juce::Time::getMillisecondCounterHiRes() + 2500.0;
+    };
     addChildComponent (stereoBtn);
-    widenBtn.caption = "widen";
+    widenBtn.caption = "balance";
     // mentre misura lampeggia
-    widenBtn.isOn = [this] { return engine.widen.load() || (engine.isMeasuringWiden() && (juce::Time::getMillisecondCounter() / 400) % 2 == 0); };
+    widenBtn.isOn = [this] { return engine.balance.load() || (engine.isMeasuring (RigEngine::kBalance) && (juce::Time::getMillisecondCounter() / 400) % 2 == 0); };
     widenBtn.onClick = [this]
     {
-        if (engine.widen.load())
+        if (engine.balance.load())
         {
-            engine.widen = false;
+            engine.balance = false;
             markDirty(); historyPending = true; historyChangeMs = juce::Time::getMillisecondCounterHiRes();
-            hint ("widen off");
+            hint ("balance off");
+            hintUntilMs = juce::Time::getMillisecondCounterHiRes() + 2500.0;
         }
-        else if (engine.isMeasuringWiden()) { engine.cancelWidenMeasure(); hint ("widen cancelled"); }
+        else if (engine.isMeasuring (RigEngine::kBalance)) { engine.cancelMeasure(); hint ("balance cancelled"); }
         else
         {
-            engine.startWidenMeasure();
-            hint ("widen: play for a second, measuring the best delay for lane b");
+            engine.startMeasure (RigEngine::kBalance);
+            hint ("balance: play for a second, measuring the two lanes");
             hintUntilMs = juce::Time::getMillisecondCounterHiRes() + 1.0e9;   // finché la misura non finisce
         }
     };
@@ -1010,17 +1024,20 @@ RigComponent::RigComponent (RigEngine& e, juce::AudioDeviceManager* devices) : e
     about->logoAt = { kMargin - 1, 10 };
 
     engine.onChainChanged = [this] { chainChanged(); };
+    if (bootPreset().isNotEmpty()) currentPreset = bootPreset();   // la sessione di prima (o il preset d'avvio)
     selectStartModule();
     syncWatchers();
     commitHistory();   // lo stato d'avvio è il primo passo
 
     setSize (1180, 760);
+    if (bootDirty()) markDirty();
     startTimerHz (60);
 }
 
 RigComponent::~RigComponent()
 {
     stopTimer();
+    if (saveSessionOnClose) saveSession();
     juce::Desktop::getInstance().removeGlobalMouseListener (inputWatch.get());
     for (auto* p : watched) p->removeListener (paramWatch.get());
     watched.clear();
@@ -1100,6 +1117,21 @@ juce::String RigComponent::startupPreset()
     return n.isNotEmpty() ? n : juce::String (kCleanSlate);   // la prima volta: catena vuota
 }
 
+bool RigComponent::hasStartupChoice() { return loadIndex()["startup"].toString().isNotEmpty(); }
+
+juce::File RigComponent::sessionFile() { return presetDir().getParentDirectory().getChildFile ("last-session.brig"); }
+
+// la sessione: la catena com'era alla chiusura, anche con modifiche non salvate, e il preset da cui veniva
+void RigComponent::saveSession()
+{
+    auto t = engine.saveRig();
+    t.setProperty ("selected", engine.indexOf (selected), nullptr);
+    t.setProperty ("preset", currentPreset, nullptr);
+    t.setProperty ("dirty", dirty, nullptr);
+    sessionFile().getParentDirectory().createDirectory();
+    if (auto x = t.createXml()) x->writeTo (sessionFile());
+}
+
 void RigComponent::setStartupPreset (const juce::String& name)
 {
     auto t = loadIndex();
@@ -1107,11 +1139,28 @@ void RigComponent::setStartupPreset (const juce::String& name)
     saveIndex (t);
 }
 
+// all'avvio: il preset scelto con "load at start-up" se c'è; altrimenti si riapre la sessione di prima, com'era
+// (anche le modifiche non salvate); la prima volta clean slate
 void RigComponent::loadStartup (RigEngine& e)
 {
+    bootPreset() = {}; bootDirty() = false;
+    if (! hasStartupChoice())
+        if (auto x = juce::XmlDocument::parse (sessionFile()))
+        {
+            const auto t = juce::ValueTree::fromXml (*x);
+            if (t.hasType ("BRIG"))
+            {
+                e.loadRig (t);
+                bootPreset() = t["preset"].toString();
+                bootDirty() = (bool) t.getProperty ("dirty", false);
+                if (bootPreset().isEmpty()) bootPreset() = kCleanSlate;
+                return;
+            }
+        }
     const auto n = startupPreset();
+    bootPreset() = n;
     if (n == kCleanSlate) { e.clear(); return; }
-    if (! loadPresetFile (e, presetFile (n))) e.clear();
+    if (! loadPresetFile (e, presetFile (n))) { e.clear(); bootPreset() = kCleanSlate; }
 }
 
 juce::String RigComponent::nextUserName()
@@ -1239,6 +1288,17 @@ juce::String RigComponent::createWithUndo()
     return name;
 }
 
+// save: aggiorna il preset caricato (clean slate non si sovrascrive: diventa un preset nuovo)
+void RigComponent::saveCurrent()
+{
+    if (! dirty) return;
+    if (currentPreset == kCleanSlate || ! presetFile (currentPreset).existsAsFile()) { saveFromTopBar(); return; }
+    savePreset (currentPreset);
+    hint ("saved \"" + currentPreset + "\"");
+    hintUntilMs = juce::Time::getMillisecondCounterHiRes() + 2500.0;
+}
+
+// new: un preset nuovo dallo stato attuale, con il nome da scrivere nella schermata dei preset
 void RigComponent::saveFromTopBar()
 {
     showPresets();
@@ -1264,6 +1324,7 @@ void RigComponent::markDirty()
     if (dirty) return;
     dirty = true;
     saveBtn.setEnabled (true);
+    newBtn.setEnabled (true);
     layoutTop();
     repaint (topArea());
     if (presets->isVisible()) presets->refresh();
@@ -1273,6 +1334,7 @@ void RigComponent::clearDirty()
 {
     dirty = false;
     saveBtn.setEnabled (false);
+    newBtn.setEnabled (false);
     layoutTop();
     repaint (topArea());
 }
@@ -1354,25 +1416,28 @@ void RigComponent::resized()
 void RigComponent::layoutTop()
 {
     const int y = (kTopH - kControlH) / 2;
-    // logo a sinistra | presets e metronomo al centro | setup a destra
-    setupBtn.setBounds (getWidth() - kMargin - setupBtn.idealWidth(), y, setupBtn.idealWidth(), kControlH);
-    const int nameW = textW (dirty ? juce::String ("unsaved") : currentPreset, kControlTextSize, Face::SansSemiBold) + 2;
-    const int saveW = saveBtn.idealWidth() + 10;
-    const int total = presetsBtn.idealWidth() + 10 + nameW + 10 + saveW + 30 + kControlH + kGap + bpmBox.getIdealWidth() + kGap + sigBox.idealWidth() + kGap + tapBtn.idealWidth();
-    int x = (getWidth() - total) / 2;
-    auto place = [&] (juce::Component& c, int w, int gap) { c.setBounds (x, y, w, kControlH); x += w + gap; };
+    // quattro blocchi alla stessa distanza tra loro: undo redo | presets, nome, save, new | metronomo | setup;
+    // tra il logo e il primo blocco uno spazio doppio. Il nome del preset ha la larghezza del più lungo dei due testi
+    // possibili (il nome e "unsaved"), così i blocchi non si spostano quando cambia lo stato.
+    const int nameW = juce::jmax (textW (currentPreset, kControlTextSize, Face::SansSemiBold), textW ("unsaved", kControlTextSize, Face::SansSemiBold)) + 2;
+    const int wUndo = undoBtn.idealWidth() + kGap + redoBtn.idealWidth();
+    const int wPre = presetsBtn.idealWidth() + 10 + nameW + 10 + saveBtn.idealWidth() + kGap + newBtn.idealWidth();
+    const int wMet = kControlH + kGap + bpmBox.getIdealWidth() + kGap + sigBox.idealWidth() + kGap + tapBtn.idealWidth();
+    const int wSet = setupBtn.idealWidth();
+    const int logoRight = kMargin - 1 + (int) std::ceil (logoWidth ("rig", kLogoSize));
+    const int gap = juce::jmax (16, (getWidth() - kMargin - logoRight - (wUndo + wPre + wMet + wSet)) / 5);
+    int x = logoRight + 2 * gap;
+    auto place = [&] (juce::Component& c, int w, int after) { c.setBounds (x, y, w, kControlH); x += w + after; };
+    place (undoBtn, undoBtn.idealWidth(), kGap);
+    place (redoBtn, redoBtn.idealWidth(), gap);
     place (presetsBtn, presetsBtn.idealWidth(), 10 + nameW + 10);
-    place (saveBtn, saveBtn.idealWidth(), 10);
-    x += 30;
+    place (saveBtn, saveBtn.idealWidth(), kGap);
+    place (newBtn, newBtn.idealWidth(), gap);
     place (metroBtn, kControlH, kGap);
     place (bpmBox, bpmBox.getIdealWidth(), kGap);
     place (sigBox, sigBox.idealWidth(), kGap);
-    place (tapBtn, tapBtn.idealWidth(), 0);
-    // undo / redo: al centro tra il logo e "presets"
-    const int logoRight = kMargin - 1 + (int) std::ceil (logoWidth ("rig", kLogoSize));
-    const int pairW = undoBtn.idealWidth() + kGap + redoBtn.idealWidth(), cx = (logoRight + presetsBtn.getX()) / 2;
-    undoBtn.setBounds (cx - pairW / 2, y, undoBtn.idealWidth(), kControlH);
-    redoBtn.setBounds (undoBtn.getRight() + kGap, y, redoBtn.idealWidth(), kControlH);
+    place (tapBtn, tapBtn.idealWidth(), gap);
+    setupBtn.setBounds (getWidth() - kMargin - wSet, y, wSet, kControlH);
 }
 
 void RigComponent::layoutLibrary()
@@ -1414,7 +1479,7 @@ juce::Rectangle<int> RigComponent::cardsViewport() const
 juce::Rectangle<int> RigComponent::splitBtnArea() const { const auto c = chainArea(); return { c.getX() + kPad, c.getCentreY() - kBtn / 2, kBtn, kBtn }; }
 juce::Rectangle<int> RigComponent::laneBtn (int lane) const { return splitBtnArea().translated (lane == 2 ? 2 * (kBtn + 6) : kBtn + 6, 0); }
 float RigComponent::laneEndX() const { return (float) stereoBtn.getX() - 30.0f; }
-int RigComponent::sideBtnW() const { return juce::jmax (stereoBtn.idealWidth(), widenBtn.idealWidth()) + 8; }
+int RigComponent::sideBtnW() const { return textW ("balance", kControlTextSize, Face::SansSemiBold) + 18 + 8; }   // il più lungo dei tre testi
 
 std::vector<int> RigComponent::viewSlots() const
 {
@@ -1602,27 +1667,41 @@ void RigComponent::showMetroMenu()
     for (int k = 0; k < RigEngine::kNumSounds; ++k) m.addItem (10 + k, RigEngine::kSoundNames[(size_t) k], true, engine.metroSound.load() == k);
     m.addSectionHeader ("volume");
     // slider del volume dentro il menu (trascinare o cliccare; il menu resta aperto)
-    struct VolumeItem final : public juce::PopupMenu::CustomComponent
+    // cursori dentro il menu (trascinare o cliccare; il menu resta aperto): volume e pitch
+    struct SliderItem final : public juce::PopupMenu::CustomComponent
     {
-        explicit VolumeItem (RigEngine& e) : juce::PopupMenu::CustomComponent (false), engine (e) {}
+        SliderItem (std::function<float()> g, std::function<void (float)> st, std::function<juce::String (float)> f, bool fromCentre)
+            : juce::PopupMenu::CustomComponent (false), get (std::move (g)), set (std::move (st)), fmt (std::move (f)), centre (fromCentre) {}
         void getIdealSize (int& w, int& h) override { w = 220; h = 30; }
-        juce::Rectangle<float> track() const { return { 14.0f, (float) getHeight() * 0.5f - 2.0f, (float) getWidth() - 74.0f, 4.0f }; }
-        void set (int x) { engine.metroVolume = juce::jlimit (0.0f, 1.0f, ((float) x - track().getX()) / track().getWidth()); repaint(); }
-        void mouseDown (const juce::MouseEvent& e) override { set (e.x); }
-        void mouseDrag (const juce::MouseEvent& e) override { set (e.x); }
+        juce::Rectangle<float> track() const { return { 14.0f, (float) getHeight() * 0.5f - 2.0f, (float) getWidth() - 80.0f, 4.0f }; }
+        void at (int x) { set (juce::jlimit (0.0f, 1.0f, ((float) x - track().getX()) / track().getWidth())); repaint(); }
+        void mouseDown (const juce::MouseEvent& e) override { at (e.x); }
+        void mouseDrag (const juce::MouseEvent& e) override { at (e.x); }
         void paint (juce::Graphics& g) override
         {
-            const float v = engine.metroVolume.load();
+            const float v = get();
             const auto t = track();
             g.setColour (valueFill); g.fillRect (t);
-            g.setColour (accent); g.fillRect (t.withWidth (t.getWidth() * v));
-            g.fillRect (t.getX() + t.getWidth() * v - 2.0f, t.getCentreY() - 6.0f, 4.0f, 12.0f);
-            drawAtBaseline (g, juce::String (juce::roundToInt (v * 100.0f)) + " %", (float) getWidth() - 12.0f,
+            g.setColour (accent);
+            const float x0 = centre ? t.getCentreX() : t.getX(), x1 = t.getX() + t.getWidth() * v;
+            g.fillRect (juce::jmin (x0, x1), t.getY(), std::abs (x1 - x0), t.getHeight());
+            g.fillRect (x1 - 2.0f, t.getCentreY() - 6.0f, 4.0f, 12.0f);
+            drawAtBaseline (g, fmt (v), (float) getWidth() - 12.0f,
                             baselineFor ((float) getHeight() * 0.5f, kValueSize, Face::MonoMedium), valueText, kValueSize, juce::Justification::right, Face::MonoMedium);
         }
-        RigEngine& engine;
+        std::function<float()> get;
+        std::function<void (float)> set;
+        std::function<juce::String (float)> fmt;
+        bool centre;
     };
-    m.addCustomItem (200, std::make_unique<VolumeItem> (engine), nullptr, "volume");
+    m.addCustomItem (200, std::make_unique<SliderItem> ([this] { return engine.metroVolume.load(); },
+                                                       [this] (float v) { engine.metroVolume = v; },
+                                                       [] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + " %"; }, false), nullptr, "volume");
+    m.addSectionHeader ("pitch");
+    m.addCustomItem (201, std::make_unique<SliderItem> ([this] { return (engine.metroPitch.load() + 12.0f) / 24.0f; },
+                                                       [this] (float v) { engine.metroPitch = (float) juce::roundToInt (v * 24.0f - 12.0f); },
+                                                       [] (float v) { const int st = juce::roundToInt (v * 24.0f - 12.0f); return (st > 0 ? "+" : "") + juce::String (st) + " st"; }, true),
+                     nullptr, "pitch");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&metroBtn).withStandardItemHeight (26), [this] (int r)
     {
         if (r >= 10 && r < 10 + RigEngine::kNumSounds) engine.metroSound = r - 10;
@@ -1633,7 +1712,7 @@ void RigComponent::paintOverChildren (juce::Graphics& g)
 {
     // la card trascinata: sopra a tutta l'interfaccia (anche al modulo aperto), segue il mouse ovunque
     if (dragSlot != nullptr && engine.indexOf (dragSlot) >= 0)
-        paintCard (g, engine.indexOf (dragSlot), { dragX - dragGrabDx, dragY - dragGrabDy, kCardW, kCardH }, true);
+        paintCard (g, engine.indexOf (dragSlot), { dragX - dragGrabDx, dragY - dragGrabDy, kCardW, kCardH }, true, {});
     if (! libDragging || libPress == nullptr) return;
     const auto vp = cardsViewport();
     if (vp.contains (libDragPos))
@@ -1692,6 +1771,9 @@ void RigComponent::applyHistory (const juce::String& xml)
         engine.wide = (bool) t.getProperty ("wide", true);
         engine.widen = (bool) t.getProperty ("widen", false);
         engine.widenMs = (float) t.getProperty ("widenMs", 0.0f);
+        engine.balance = (bool) t.getProperty ("balance", false);
+        engine.gainA = (float) t.getProperty ("gainA", 1.0f); engine.gainB = (float) t.getProperty ("gainB", 1.0f);
+        engine.alignMs = (float) t.getProperty ("alignMs", 0.0f);
     }
     else
     {
@@ -2186,13 +2268,27 @@ void RigComponent::checkCabs()
 void RigComponent::timerCallback()
 {
     engine.collectGarbage();
-    if (engine.pollWiden())
+    if (const juce::String sc = engine.wide.load() ? "stereo" : "mono"; stereoBtn.caption != sc) { stereoBtn.caption = sc; stereoBtn.repaint(); }
+    // in stereo widen si misura da solo (la prima volta che si suona); balance quando lo si chiede
+    if (engine.isSplit() && engine.wide.load() && ! engine.widen.load() && ! engine.isMeasuring (RigEngine::kWiden))
+        engine.startMeasure (RigEngine::kWiden);
+    if (const int done = engine.pollMeasure(); done != 0)
     {
         markDirty(); historyPending = true; historyChangeMs = juce::Time::getMillisecondCounterHiRes();
-        hint ("widen: lane b " + num (engine.widenMs.load(), 1) + " ms later, the delay that keeps the mono sum full");
+        juce::String msg;
+        if (done & RigEngine::kBalance)
+        {
+            const float ga = std::abs (engine.gainA.load()), gb = std::abs (engine.gainB.load()), al = engine.alignMs.load();
+            msg = "balance: lane a " + num (juce::Decibels::gainToDecibels (ga), 1) + " dB, lane b " + num (juce::Decibels::gainToDecibels (gb), 1) + " dB"
+                + (std::abs (al) > 0.01f ? ", " + juce::String (al > 0.0f ? "b" : "a") + " " + num (std::abs (al), 2) + " ms later" : juce::String())
+                + (engine.gainB.load() < 0.0f ? ", b inverted" : "");
+        }
+        else msg = "stereo: lane b " + num (engine.widenMs.load(), 1) + " ms later, the delay that keeps the mono sum full";
+        hint (msg);
         hintUntilMs = juce::Time::getMillisecondCounterHiRes() + 6000.0;
+        widenBtn.repaint();
     }
-    if (engine.isMeasuringWiden()) widenBtn.repaint();
+    if (engine.isMeasuring (RigEngine::kBalance)) widenBtn.repaint();
     else if (hintUntilMs - juce::Time::getMillisecondCounterHiRes() > 1.0e8) { hintUntilMs = 0; widenBtn.repaint(); repaint (wsArea().withHeight (kWsHeadH)); }   // misura finita o annullata
     if (++cabTick % 6 == 0) checkCabs();   // 10 volte al secondo
     if (historyPending && juce::Time::getMillisecondCounterHiRes() - historyChangeMs > 400.0
@@ -2218,7 +2314,9 @@ void RigComponent::timerCallback()
 // ---------------------------------------------------------------- disegno
 
 // una card della catena (ghost = quella che segue il mouse durante il trascinamento)
-void RigComponent::paintCard (juce::Graphics& g, int i, juce::Rectangle<int> r, bool ghost)
+// frame: il contorno, se diverso dalla card. Una card tagliata dal bordo della catena (scorrendo) ha il contorno
+// sulla parte visibile: resta chiuso su tutti e quattro i lati, mentre il contenuto scorre sotto
+void RigComponent::paintCard (juce::Graphics& g, int i, juce::Rectangle<int> r, bool ghost, juce::Rectangle<int> frameRect)
 {
     const auto v = viewSlots();
     const bool isSplit = engine.isSplit();
@@ -2229,8 +2327,9 @@ void RigComponent::paintCard (juce::Graphics& g, int i, juce::Rectangle<int> r, 
     const bool hov = ! ghost && dragSlot == nullptr && r.contains (hover);
     g.setColour (ghost ? background.withAlpha (0.94f) : background); g.fillRect (rf);
     if (sel) { g.setColour (s.info->colour.withAlpha (0.08f)); g.fillRect (rf); }
-    g.setColour (ghost ? labelHover : sel ? s.info->colour : hov ? labelHover : frame);
-    outline (g, rf);
+    const auto outlineRect = frameRect.isEmpty() ? rf : frameRect.toFloat();
+    const auto edge = ghost ? labelHover : sel ? s.info->colour : hov ? labelHover : frame;
+    struct Outline { juce::Graphics& g; juce::Rectangle<float> r; juce::Colour c; ~Outline() { g.setColour (c); outline (g, r); } } closing { g, outlineRect, edge };
     const auto led = juce::Rectangle<float> (rf.getX() + 9.0f, rf.getY() + 9.0f, 10.0f, 10.0f);
     if (on) { g.setColour (s.info->colour); g.fillRect (led); }
     else { g.setColour (juce::Colour (0xff262626)); g.fillRect (led); g.setColour (av ? text : juce::Colour (0xff3a3a3a)); outline (g, led); }
@@ -2471,8 +2570,9 @@ void RigComponent::paint (juce::Graphics& g)
         {
             const auto r = cardRect (d);
             if (! r.intersects (vp)) continue;
-            if (&engine.slot (v[(size_t) d]) == dragSlot) { g.setColour (background); g.fillRect (r); g.setColour (kOff); outline (g, r.toFloat()); continue; }
-            paintCard (g, v[(size_t) d], r, false);
+            const auto vis = r.getIntersection (vp);   // la parte visibile: lì il contorno, sempre chiuso
+            if (&engine.slot (v[(size_t) d]) == dragSlot) { g.setColour (background); g.fillRect (r); g.setColour (kOff); outline (g, vis.toFloat()); continue; }
+            paintCard (g, v[(size_t) d], r, false, vis);
         }
         if (markerDragging)
         {
@@ -2487,10 +2587,11 @@ void RigComponent::paint (juce::Graphics& g)
         g.restoreState();
         if (chainContentW > vp.getWidth() && vp.getWidth() > 0)
         {
-            const float tw = (float) vp.getWidth(), frac = tw / (float) chainContentW;
-            const float bx = (float) vp.getX() + (float) chainScroll / (float) chainContentW * tw;
-            g.setColour (juce::Colour (0xff262626)); g.fillRect ((float) vp.getX(), (float) c.getBottom() - 5.0f, tw, 2.0f);
-            g.setColour (text); g.fillRect (bx, (float) c.getBottom() - 5.0f, tw * frac, 2.0f);
+            // barra di scorrimento discreta: più corta della catena (60 %, centrata), una linea scura e la parte visibile
+            const float tw = std::round ((float) vp.getWidth() * 0.6f), tx = (float) vp.getCentreX() - tw * 0.5f, frac = (float) vp.getWidth() / (float) chainContentW;
+            const float bx = tx + (float) chainScroll / (float) chainContentW * tw, by = (float) c.getBottom() - 4.0f;
+            g.setColour (juce::Colour (0xff1f1f1f)); g.fillRect (tx, by, tw, 1.0f);
+            g.setColour (frame); g.fillRect (bx, by - 0.5f, tw * frac, 2.0f);
         }
     }
 
@@ -2529,13 +2630,8 @@ void RigComponent::paint (juce::Graphics& g)
             else if (m->safeArm && selected->safeMuted.load()) { g.setColour (kAmber); outline (g, t); drawLabel (g, "ARM", wsToggleArea(), kAmber, 15.0f, juce::Justification::centred, Face::MonoSemiBold); }
             else { g.setColour (hov ? labelHover : text); outline (g, t); drawLabel (g, "OFF", wsToggleArea(), hov ? labelHover : selector, 15.0f, juce::Justification::centred, Face::MonoSemiBold); }
 
-            if (editor != nullptr)
-            {
-                const auto eb = editor->getBoundsInParent().toFloat();
-                g.setColour (on ? m->colour.withAlpha (0.5f) : frame);
-                outline (g, eb.expanded (1.0f));
-            }
-            else
+            // il modulo aperto: senza contorno, sullo stesso sfondo dell'app (si unisce all'interfaccia di b-rig)
+            if (editor == nullptr)
             {
                 const auto body = ws.withTrimmedTop (kWsHeadH);
                 drawLabel (g, m->name + ": coming soon", body.withSizeKeepingCentre (400, 24), selector, 17.0f, juce::Justification::centred, Face::SansMedium);

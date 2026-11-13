@@ -41,7 +41,7 @@ set(BDOUBLE_SOURCES
 
 target_sources(BDouble PRIVATE ${BDOUBLE_SOURCES})
 target_include_directories(BDouble PRIVATE Source ../shared)
-target_compile_definitions(BDouble PRIVATE SMP_ACCENT_ARGB=0xff22d3ee)   
+target_compile_definitions(BDouble PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DOUBLE)   
 target_compile_definitions(BDouble PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BDouble
     PRIVATE BDoubleAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BDouble
 juce_add_console_app(BDoubleTests PRODUCT_NAME "BDoubleTests")
 target_sources(BDoubleTests PRIVATE Tests/Tests.cpp ${BDOUBLE_SOURCES})
 target_include_directories(BDoubleTests PRIVATE Source ../shared)
-target_compile_definitions(BDoubleTests PRIVATE SMP_ACCENT_ARGB=0xff22d3ee JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BDoubleTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DOUBLE JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BDoubleTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BDoubleTests PRIVATE BDoubleAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

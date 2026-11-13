@@ -34,8 +34,8 @@ void RigEngine::prepare (double sampleRate, int maxBlockSize)
     maxBlock = juce::jlimit (16, kMaxChunk, maxBlockSize > 0 ? maxBlockSize : 512);
     work.setSize (2, maxBlock, false, true, false);
     workB.setSize (2, maxBlock, false, true, false);
-    for (auto& l : widenLine) l.assign ((size_t) kWidenBuf, 0.0f);
-    widenW = 0; widenCur = 0.0f;
+    for (auto& l : laneLine) l.assign ((size_t) kWidenBuf, 0.0f);
+    widenW = 0; delayCur[0] = delayCur[1] = 0.0f;
     widenSmooth = (float) (1.0 - std::exp (-1.0 / (0.05 * fs)));   // il ritardo cambia in circa 50 ms, senza click
     capA.assign ((size_t) (0.75 * fs), 0.0f);
     capB.assign ((size_t) (0.75 * fs) + (size_t) (0.026 * fs), 0.0f);
@@ -172,6 +172,18 @@ void RigEngine::remuteUncovered (const std::vector<const Slot*>& before)
         }
 }
 
+// b-amp muto per protezione con un b-blend dopo di sé: si arma (fade-in di 80 ms). Anche senza IR: b-blend senza IR
+// blocca l'uscita da solo. Un ampli spento dall'utente resta spento.
+void RigEngine::armCovered()
+{
+    for (size_t i = 0; i < order.size(); ++i)
+    {
+        auto& s = *order[i];
+        if (s.info->safeArm && s.proc != nullptr && s.safeMuted.load() && ! s.enabled.load() && cabAfter ((int) i, false))
+        { s.enabled = true; s.safeMuted = false; }
+    }
+}
+
 int RigEngine::logicalPosition (const ModuleInfo& m) const
 {
     int pos = 0, k = 0;
@@ -235,6 +247,7 @@ Slot* RigEngine::addModuleAt (const juce::String& id, int lane, int pos)
     const juce::ScopedLock sl (chainLock());
     auto* raw = s.get();
     insertSlot (std::move (s), lane, pos);
+    armCovered();
     publish();
     if (onChainChanged) onChainChanged();
     return raw;
@@ -267,6 +280,7 @@ bool RigEngine::placeSlot (int index, int lane, int pos)
     s->lane = lane;
     order.insert (order.begin() + at, std::move (s));
     remuteUncovered (covered);
+    armCovered();
     publish();
     if (onChainChanged) onChainChanged();
     return true;
@@ -301,7 +315,7 @@ void RigEngine::splitChain()
     const juce::ScopedLock sl (chainLock());
     split = true;
     wide = true;      // stereo acceso di default: a a sinistra, b a destra
-    widen = false;
+    widen = false; balance = false; gainA = gainB = 1.0f; alignMs = 0.0f;
     std::vector<std::unique_ptr<Slot>> copies;
     for (auto& s : order) { s->lane = 1; if ((int) (order.size() + copies.size()) < kMaxSlots) copies.push_back (cloneSlot (*s)); }
     for (auto& c : copies) { c->lane = 2; if (prepared) prepareSlot (*c); order.push_back (std::move (c)); }
@@ -322,8 +336,9 @@ void RigEngine::mergeChain (int keepLane)
     order = std::move (kept);
     split = false;
     wide = false;
-    widen = false; widenState = 0;
+    widen = false; widenState = 0; balance = false;
     remuteUncovered (covered);
+    armCovered();
     publish();
     for (auto& s : gone) retired.back().slots.push_back (std::move (s));
     if (onChainChanged) onChainChanged();
@@ -386,6 +401,7 @@ void RigEngine::moveSplit (int viewLane, int newTrunk)
         }
     }
     remuteUncovered (covered);
+    armCovered();
     publish();
     for (auto& s : gone) retired.back().slots.push_back (std::move (s));
     if (onChainChanged) onChainChanged();
@@ -399,7 +415,7 @@ void RigEngine::clear()
     order.clear();
     split = false;
     wide = false;
-    widen = false; widenState = 0;
+    widen = false; widenState = 0; balance = false;
     publish();
     for (auto& s : gone) retired.back().slots.push_back (std::move (s));
 }
@@ -413,15 +429,15 @@ void RigEngine::resetDefault()
     addModule ("blend", 2);
     addModule ("aftercab", 3);
     setEnabled (0, false);
-    slot (1).enabled = false; slot (1).safeMuted = true;   // b-amp: safe muted
+    slot (1).enabled = false; slot (1).safeMuted = false;   // b-amp spento (catena dei test: lo si accende a mano)
     onChainChanged = std::move (cb);
     if (onChainChanged) onChainChanged();
 }
 
 void RigEngine::armIfCovered (Slot& s)
 {
-    // b-amp da un preset riparte acceso solo se dopo di lui c'è un b-blend con un IR caricato (la cassa)
-    if (cabAfter (indexOf (&s), true)) { s.enabled = true; s.safeMuted = false; }
+    // b-amp da un preset riparte acceso se dopo di lui c'è un b-blend (senza IR b-blend blocca l'uscita da solo)
+    if (cabAfter (indexOf (&s), false)) { s.enabled = true; s.safeMuted = false; }
 }
 
 juce::ValueTree RigEngine::saveRig() const
@@ -433,6 +449,12 @@ juce::ValueTree RigEngine::saveRig() const
         t.setProperty ("split", true, nullptr);
         t.setProperty ("wide", wide.load(), nullptr);
         if (widen.load()) { t.setProperty ("widen", true, nullptr); t.setProperty ("widenMs", widenMs.load(), nullptr); }
+        if (balance.load())
+        {
+            t.setProperty ("balance", true, nullptr);
+            t.setProperty ("gainA", gainA.load(), nullptr); t.setProperty ("gainB", gainB.load(), nullptr);
+            t.setProperty ("alignMs", alignMs.load(), nullptr);
+        }
     }
     for (auto& s : order)
     {
@@ -461,6 +483,9 @@ void RigEngine::loadRig (const juce::ValueTree& t)
     wide = split && (bool) t.getProperty ("wide", true);
     widen = split && (bool) t.getProperty ("widen", false);
     widenMs = (float) t.getProperty ("widenMs", 0.0f);
+    balance = split && (bool) t.getProperty ("balance", false);
+    gainA = (float) t.getProperty ("gainA", 1.0f); gainB = (float) t.getProperty ("gainB", 1.0f);
+    alignMs = (float) t.getProperty ("alignMs", 0.0f);
     std::vector<Slot*> armed;
     for (auto c : t)
     {
@@ -536,10 +561,33 @@ void RigEngine::processSlot (Slot& s, juce::AudioBuffer<float>& w, int n) noexce
     s.fade = x;
 }
 
-void RigEngine::startWidenMeasure()
+void RigEngine::startMeasure (int what)
 {
-    capPos = 0;   // il thread audio non registra finché widenState non è 1
-    widenState = 1;
+    measureWhat = measureWhat.load() | what;
+    if (widenState.load() == 0) { capPos = 0; widenState = 1; }   // il thread audio non registra finché widenState non è 1
+}
+
+RigEngine::BalanceResult RigEngine::measureBalance (const float* a, const float* b, int n, double sr)
+{
+    // b registrato con lead campioni in più prima di a (vedi bestWidenLag)
+    const int lead = (int) (0.026 * sr), lim = (int) (0.005 * sr), m = n - lim;
+    BalanceResult r;
+    double best = 0.0; int bestL = 0;
+    for (int L = -lim; L <= lim; ++L)
+    {
+        const float* bb = b + lead - L;
+        double c = 0.0;
+        for (int i = 0; i < m; ++i) c += (double) a[i] * bb[i];
+        if (std::abs (c) > std::abs (best)) { best = c; bestL = L; }
+    }
+    double ea = 0.0, eb = 0.0;
+    for (int i = 0; i < m; ++i) { ea += (double) a[i] * a[i]; eb += (double) b[lead + i] * b[lead + i]; }
+    const double ra = std::sqrt (ea / m), rb = std::sqrt (eb / m), target = std::sqrt (ra * rb);
+    r.alignMs = (float) (1000.0 * bestL / sr);
+    r.gainA = ra > 1.0e-9 ? (float) juce::jlimit (0.25, 4.0, target / ra) : 1.0f;
+    r.gainB = rb > 1.0e-9 ? (float) juce::jlimit (0.25, 4.0, target / rb) : 1.0f;
+    if (best < 0.0) r.gainB = -r.gainB;   // b in controfase: si inverte
+    return r;
 }
 
 float RigEngine::bestWidenLag (const float* a, const float* b, int n, double sr)
@@ -557,13 +605,20 @@ float RigEngine::bestWidenLag (const float* a, const float* b, int n, double sr)
     return (float) (1000.0 * bestL / sr);
 }
 
-bool RigEngine::pollWiden()
+int RigEngine::pollMeasure()
 {
-    if (widenState.load() != 2) return false;
-    widenMs = bestWidenLag (capA.data(), capB.data(), (int) capA.size(), fs);
+    if (widenState.load() != 2) return 0;
+    const int what = measureWhat.load();
+    if (what & kWiden) { widenMs = bestWidenLag (capA.data(), capB.data(), (int) capA.size(), fs); widen = true; }
+    if (what & kBalance)
+    {
+        const auto r = measureBalance (capA.data(), capB.data(), (int) capA.size(), fs);
+        alignMs = r.alignMs; gainA = r.gainA; gainB = r.gainB;
+        balance = true;
+    }
+    measureWhat = 0;
     widenState = 0;
-    widen = true;
-    return true;
+    return what;
 }
 
 bool RigEngine::metronome (int n) noexcept
@@ -584,12 +639,15 @@ bool RigEngine::metronome (int n) noexcept
             beat = (beat + 1) % sig.first;
             beatInBar.store (beat, std::memory_order_relaxed);
             clickSound = juce::jlimit (0, kNumSounds - 1, metroSound.load (std::memory_order_relaxed));
-            const double f = clickSound == 2 ? (beat == 0 ? 1250.0 : 950.0) : (beat == 0 ? 2000.0 : 1300.0);
+            // il pitch si legge solo all'inizio del click: cambiarlo non spezza mai un suono a metà
+            const double pitch = std::exp2 (juce::jlimit (-12.0f, 12.0f, metroPitch.load (std::memory_order_relaxed)) / 12.0);
+            const double f = pitch * (clickSound == 2 ? (beat == 0 ? 1250.0 : 950.0) : (beat == 0 ? 2000.0 : 1300.0));
             clickInc = (float) (juce::MathConstants<double>::twoPi * f / fs);
             clickInc2 = clickInc * 2.76f;   // seconda risonanza del legno
             clickPhase = clickPhase2 = 0;
             clickDecay = decays[(size_t) clickSound];
-            clickEnv = (beat == 0 ? 0.47f : 0.29f) * juce::jlimit (0.0f, 1.0f, metroVolume.load (std::memory_order_relaxed));
+            clickEnv = (beat == 0 ? 0.9f : 0.6f) * juce::jlimit (0.0f, 1.0f, metroVolume.load (std::memory_order_relaxed));   // il doppio di prima al massimo
+            hatMix = (float) juce::jlimit (0.0, 1.0, 0.5 + juce::jlimit (-12.0f, 12.0f, metroPitch.load (std::memory_order_relaxed)) / 24.0);
             const double quarter = 60.0 / juce::jlimit (kMinBpm, kMaxBpm, bpm.load (std::memory_order_relaxed)) * fs;
             samplesToBeat += sig.second == 8 ? quarter * 0.5 : quarter;
             ppq += sig.second == 8 ? 0.5 : 1.0;
@@ -602,7 +660,8 @@ bool RigEngine::metronome (int n) noexcept
             {
                 noise = noise * 1664525u + 1013904223u;
                 const float nz = (float) (noise >> 8) * (2.0f / 16777216.0f) - 1.0f;
-                v = clickEnv * (nz - 2.0f * clickPrev + clickPrev2) * 0.35f;
+                // pitch: più alto = più differenza seconda (più chiaro), più basso = più differenza prima (più scuro)
+                v = clickEnv * (hatMix * (nz - 2.0f * clickPrev + clickPrev2) * 0.35f + (1.0f - hatMix) * (nz - clickPrev) * 0.5f);
                 clickPrev2 = clickPrev; clickPrev = nz;
             }
             else if (clickSound == 2) v = clickEnv * (std::sin (clickPhase) + 0.45f * std::sin (clickPhase2));
@@ -677,18 +736,17 @@ void RigEngine::process (const float* const* in, int numIn, float* const* out, i
             for (int c = 0; c < 2; ++c) workB.copyFrom (c, 0, work, c, 0, n);
             for (int k = chain->nTrunk; k < chain->nTrunk + chain->nA; ++k) processSlot (*chain->s[(size_t) k], work, n);
             for (int k = chain->nTrunk + chain->nA; k < chain->n; ++k) processSlot (*chain->s[(size_t) k], workB, n);
-            // widen: il ramo b passa da una linea di ritardo (il tempo insegue quello voluto in ~50 ms); la misura
-            // registra a e b prima del ritardo
+            // fine dei rami: misura (registra a e b così come escono), poi ritardo e guadagno di ogni ramo
             {
-                float* bw0 = workB.getWritePointer (0);
-                float* bw1 = workB.getWritePointer (1);
+                float* aw[2] = { w0, w1 };
+                float* bw[2] = { workB.getWritePointer (0), workB.getWritePointer (1) };
                 if (widenState.load (std::memory_order_relaxed) == 1 && ! capA.empty())
                 {
                     const int lead = (int) capB.size() - (int) capA.size();
                     for (int i = 0; i < n && capPos < (int) capB.size(); ++i, ++capPos)
                     {
-                        capB[(size_t) capPos] = 0.5f * (bw0[i] + bw1[i]);
-                        if (capPos >= lead) capA[(size_t) (capPos - lead)] = 0.5f * (w0[i] + w1[i]);
+                        capB[(size_t) capPos] = 0.5f * (bw[0][i] + bw[1][i]);
+                        if (capPos >= lead) capA[(size_t) (capPos - lead)] = 0.5f * (aw[0][i] + aw[1][i]);
                     }
                     if (capPos >= (int) capB.size())
                     {
@@ -697,31 +755,38 @@ void RigEngine::process (const float* const* in, int numIn, float* const* out, i
                         capPos = 0;   // altrimenti si riprova
                     }
                 }
-                const float target = widen.load (std::memory_order_relaxed) ? juce::jlimit (0.0f, (float) (kWidenBuf - 4), widenMs.load (std::memory_order_relaxed) * 0.001f * (float) fs) : 0.0f;
-                if (target > 0.0f || widenCur > 0.0f)
+                // ritardi voluti (campioni): in stereo widen su b; in mono l'allineamento di balance
+                const bool st = wide.load (std::memory_order_relaxed), bal = balance.load (std::memory_order_relaxed);
+                const float msToS = 0.001f * (float) fs, maxD = (float) (kWidenBuf - 4);
+                float want[2] = { 0.0f, 0.0f };
+                if (st) { if (widen.load (std::memory_order_relaxed)) want[1] = widenMs.load (std::memory_order_relaxed) * msToS; }
+                else if (bal) { const float al = alignMs.load (std::memory_order_relaxed) * msToS; want[al > 0.0f ? 1 : 0] = std::abs (al); }
+                const float gWant[2] = { bal ? gainA.load (std::memory_order_relaxed) : 1.0f, bal ? gainB.load (std::memory_order_relaxed) : 1.0f };
+                for (int l = 0; l < 2; ++l)
+                {
+                    want[l] = juce::jlimit (0.0f, maxD, want[l]);
+                    float** ch = l == 0 ? aw : bw;
                     for (int i = 0; i < n; ++i)
                     {
-                        widenCur += widenSmooth * (target - widenCur);
-                        if (target <= 0.0f && widenCur < 0.01f) widenCur = 0.0f;
-                        widenLine[0][(size_t) widenW] = bw0[i];
-                        widenLine[1][(size_t) widenW] = bw1[i];
-                        const float pos = (float) widenW - widenCur + (float) kWidenBuf;
+                        delayCur[l] += widenSmooth * (want[l] - delayCur[l]);
+                        gainCur[l] += widenSmooth * (gWant[l] - gainCur[l]);
+                        if (want[l] <= 0.0f && delayCur[l] < 0.01f) delayCur[l] = 0.0f;
+                        const float pos = (float) widenW + (float) i - delayCur[l] + (float) kWidenBuf;
                         const int i0 = (int) pos; const float fr = pos - (float) i0;
                         for (int c = 0; c < 2; ++c)
                         {
-                            const auto& ln = widenLine[(size_t) c];
-                            const float a0 = ln[(size_t) (i0 & (kWidenBuf - 1))], a1 = ln[(size_t) ((i0 + 1) & (kWidenBuf - 1))];
-                            (c == 0 ? bw0 : bw1)[i] = a0 + fr * (a1 - a0);
+                            auto& ln = laneLine[(size_t) (2 * l + c)];
+                            ln[(size_t) ((widenW + i) & (kWidenBuf - 1))] = ch[c][i];   // la linea resta sempre aggiornata
+                            if (delayCur[l] > 0.0f)
+                            {
+                                const float a0 = ln[(size_t) (i0 & (kWidenBuf - 1))], a1 = ln[(size_t) ((i0 + 1) & (kWidenBuf - 1))];
+                                ch[c][i] = a0 + fr * (a1 - a0);
+                            }
+                            ch[c][i] *= gainCur[l];
                         }
-                        widenW = (widenW + 1) & (kWidenBuf - 1);
                     }
-                else
-                    for (int i = 0; i < n; ++i)   // la linea resta aggiornata: accendendo widen non parte da zero
-                    {
-                        widenLine[0][(size_t) widenW] = bw0[i];
-                        widenLine[1][(size_t) widenW] = bw1[i];
-                        widenW = (widenW + 1) & (kWidenBuf - 1);
-                    }
+                }
+                widenW = (widenW + n) & (kWidenBuf - 1);
             }
             // somma: a -6 dB ciascuno (due rami uguali = un ramo solo); stereo: a a sinistra, b a destra (in mono).
             // Il passaggio tra le due somme dura 20 ms.
@@ -761,12 +826,21 @@ void RigEngine::process (const float* const* in, int numIn, float* const* out, i
         }
         // metronomo in parallelo: non passa dalla catena né dal limiter della chitarra (che non lo schiaccia), si
         // somma alla fine; un clip a 0 dBFS resta come ultima protezione
+        // somma con un limite morbido sopra 0,85: un click forte su una chitarra forte non gracchia
         if (metronome (n))
+        {
+            auto soft = [] (float x) noexcept
+            {
+                const float a = std::abs (x);
+                if (a <= 0.85f) return x;
+                return std::copysign (0.85f + 0.149f * std::tanh ((a - 0.85f) / 0.149f), x);
+            };
             for (int i = 0; i < n; ++i)
             {
-                w0[i] = juce::jlimit (-0.999f, 0.999f, w0[i] + metroBuf[(size_t) i]);
-                w1[i] = juce::jlimit (-0.999f, 0.999f, w1[i] + metroBuf[(size_t) i]);
+                w0[i] = soft (w0[i] + metroBuf[(size_t) i]);
+                w1[i] = soft (w1[i] + metroBuf[(size_t) i]);
             }
+        }
         const auto r0 = juce::FloatVectorOperations::findMinAndMax (w0, n);
         const auto r1 = juce::FloatVectorOperations::findMinAndMax (w1, n);
         outPk = juce::jmax (outPk, -r0.getStart(), r0.getEnd(), juce::jmax (-r1.getStart(), r1.getEnd()));

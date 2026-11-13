@@ -220,6 +220,18 @@ int main()
             check (std::abs (ct) < 1.0, "tuner MPM: entro 1 cent", ct);
         }
     }
+    // 4b. gate e note basse lunghe: un mi basso (82 Hz) e un la in drop (55 Hz) che si spengono piano non vengono
+    //     tagliati dal gate di default (-60 dB); stessa uscita con il gate spento finché la nota è sopra la soglia
+    for (double f0 : { 82.41, 55.0 })
+    {
+        auto note = [f0] (int i) { const double t = i / sr; double v = 0; for (int h = 1; h <= 5; ++h) v += std::sin (tp * f0 * h * t) / h; return (float) (0.25 * std::exp (-t * 1.2) * v); };
+        auto mk = [] (float on) { auto q = make<BAmpProcessor> (1, 1); setP (q->apvts, BAmpIDs::channel, 2); setP (q->apvts, BAmpIDs::gain, 60); setP (q->apvts, BAmpIDs::gateOn, on); return q; };
+        auto g1 = mk (1.0f), g0 = mk (0.0f);
+        auto y1 = run (*g1, 2 * 48000, note), y0 = run (*g0, 2 * 48000, note);
+        const double d = rmsDb (y1, 0, 72000, 96000) - rmsDb (y0, 0, 72000, 96000);
+        std::printf ("       gate con una nota a %.0f Hz che si spegne (1,5-2 s): %.2f dB rispetto al gate spento\n", f0, d);
+        check (std::abs (d) < 1.0, "gate: le note basse lunghe non vengono tagliate", d);
+    }
     // 5. noise gate spento di default; tone del boost vol + eq; oversampling spento; controlli per testata salvati
     {
         auto p = make<BAmpProcessor> (1, 1);

@@ -1,23 +1,34 @@
 #pragma once
 // b-drop: traspositore di accordatura (-12...+12 semitoni) da mettere per primo sulla DI della chitarra.
-// Nel dominio del tempo, senza FFT:
-//   1. pitch shifter a due testine     - linea di ritardo circolare letta da due testine che ruotano su un grano
-//                                        di 14 ms, incrociate con finestre di Hann (somma costante). Il ritardo
-//                                        medio è ~8 ms
-//   2. aggancio di fase                - quando una testina ricomincia il grano, cerca entro un periodo della nota più
-//                                        bassa (640 campioni a 48 kHz, passo 2) il punto più simile all'altra testina
-//                                        (correlazione normalizzata): intonazione esatta e niente tremolio sugli accordi
-//   3. zero-lag pick                   - un rilevatore veloce (0,1/6 ms) sulle alte sopra 3,5 kHz (il clic del
-//                                        plettro, senza nota) apre per 4 ms un passaggio diretto, a latenza zero,
-//                                        di quella banda: il colpo di plettro si sente subito, la nota trasposta
-//                                        arriva ~8 ms dopo
-//   4. tension                         - scendendo di tono: passa-alto da 45 a 95 Hz, taglio a 165 Hz (Q 1,4) e
-//                                        un po' di presenza a 3 kHz, in proporzione ai semitoni scesi
-//   5. mix                             - asciutto (senza ritardo) e trasposto; on/off con dissolvenza di 10 ms
+// Polifonico e stabile: nessun inseguimento dell'altezza. Il rapporto è una costante, 2^((semitoni + cent/100) / 12).
+//   1. pre-filtro                      - passa-alto di Butterworth del 2° ordine a 52 Hz sull'ingresso dello shifter: il
+//                                        rumore meccanico sotto le corde non viene trasposto in basso
+//   2. phase vocoder a picchi bloccati - FFT di 1024 punti (a 44,1/48 kHz; 2048 a 88,2/96 kHz), salto di sintesi 256 (4
+//      (Laroche e Dolson)                volte di sovrapposizione), finestra di Hann in analisi e sintesi. Allunga o accorcia
+//                                        il tempo del rapporto (salto d'analisi = 256 / rapporto) e un ricampionatore
+//                                        (Hermite) lo rilegge alla velocità del rapporto: la durata torna quella di prima e
+//                                        l'altezza cambia esatta, a qualunque frequenza (spostare i bin dello spettro, con
+//                                        bin da 47 Hz, sbaglierebbe le note basse). Per ogni frame: modulo e frequenza
+//                                        istantanea di ogni bin (avanzamento di fase srotolato), i picchi locali e la regione
+//                                        di ogni picco (i bin più vicini a lui). Solo i picchi avanzano la fase di sintesi;
+//                                        ogni bin della regione tiene con il suo picco la relazione di fase che aveva in
+//                                        ingresso (identity phase locking): ogni armonica di ogni corda si muove come un
+//                                        corpo rigido, niente tremolio sugli accordi
+//   3. attacco                         - un rilevatore di transienti (inviluppo veloce contro lento della DI) a ogni nuova
+//                                        plettrata riallinea tutte le fasi di sintesi a quelle d'ingresso (phase reset), e
+//                                        "zero-lag pick" mescola per 5 ms, a latenza zero, la parte sopra 2,8 kHz della DI:
+//                                        il colpo di plettro si sente subito, la nota trasposta arriva un frame dopo
+//                                        (circa 24 ms a 48 kHz)
+//   4. tension                         - scendendo di tono, in proporzione ai semitoni scesi e a "tension": un taglio a
+//                                        160 Hz (fino a -4,5 dB a -12 st) asciuga il fango e uno scaffale a 3,2 kHz (fino a
+//                                        +2 dB) ridà la brillantezza persa, come una baritona con le corde tese
+//   5. mix                             - asciutto (senza ritardo) e trasposto; on/off con dissolvenza di 10 ms; a 0 semitoni
+//                                        l'ingresso passa identico
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
 #include <atomic>
 #include <vector>
+#include <juce_dsp/juce_dsp.h>
 #include "smp/Filters.h"
 
 namespace BDropIDs
@@ -75,28 +86,32 @@ private:
     std::atomic<float>* pSemi = nullptr; std::atomic<float>* pFine = nullptr; std::atomic<float>* pTension = nullptr;
     std::atomic<float>* pMix = nullptr;
 
-    float readAt (float delay) const noexcept;
-    float findSplice (float baseDelay, float otherDelay) noexcept;
+    void processFrame (juce::int64 start, int hopIn) noexcept;
 
     double fs = 48000.0;
-    static constexpr int kBuf = 8192;
-    std::vector<float> buf = std::vector<float> (kBuf, 0.0f);
-    int w = 0;
-    float grain = 672.0f, dMin = 68.0f;
-    int search = 640;
-    std::array<float, 1026> corr {};
-    struct Head { float d = 0.0f; float off = 0.0f; };   // ritardo attuale e spostamento dell'aggancio
-    std::array<Head, 2> heads {};
+    // phase vocoder
+    int N = 1024, H = 256, order = 10;
+    std::unique_ptr<juce::dsp::FFT> fft;
+    std::vector<float> win, inRing, frame, outAcc, prevPhase, synthPhase, mag, phase, omega, fifo;
+    std::vector<int> peaks;
+    juce::int64 inCount = 0, lastStart = -1, fifoW = 0;
+    double anaPos = 0.0, readPos = 0.0;
+    bool reading = false;
+    static constexpr int kFifo = 1 << 14;
+    float olaScale = 1.0f;
+    bool resetPending = true;
+    sp::Svf preHp;
     float ratioSm = 1.0f, glide = 0.0f, idSm = 1.0f, onGain = 1.0f, onCoef = 0.0f, mixSm = 1.0f;
 
-    // zero-lag pick
+    // attacco: transienti (phase reset) e zero-lag pick
     sp::Svf pickHp1, pickHp2;
     float eFast = 0, eSlow = 0, fAtk = 0, fRel = 0, sAtk = 0, sRel = 0;
-    int pickLeft = 0, pickLen = 192, pickHold = 0;
+    float tFast = 0, tSlow = 0;
+    int pickLeft = 0, pickLen = 240, pickHold = 0, onsetHold = 0;
     float pickGain = 0.0f;
 
     // tension (solo sul segnale trasposto)
-    sp::Svf tHp, tMud, tAir;
+    sp::Svf tMud, tAir;
     float lastT = -1.0f, mudG = 1.0f, airG = 0.0f;
-    bool tHpOn = false;
+    bool tOn = false;
 };

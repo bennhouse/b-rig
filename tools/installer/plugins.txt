@@ -3,7 +3,7 @@
 b-drop BDrop
 b-focus BFocus
 b-freshstrings BFreshstrings
-b-tight BTight
+b-comp BComp
 b-wire BWire
 b-starve BStarve
 b-distort BDistort

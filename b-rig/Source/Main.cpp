@@ -59,13 +59,14 @@ public:
         o.osxLibrarySubFolder = "Application Support";
         props = std::make_unique<juce::PropertiesFile> (o);
 
-        // il preset scelto per l'avvio (all'inizio "clean slate", la catena vuota), prima di aprire l'audio
+        // la sessione di prima (o il preset scelto per l'avvio; la prima volta clean slate), prima di aprire l'audio
         rig::RigComponent::loadStartup (engine);
         engine.diChannel = props->getIntValue ("di", 0);
         // metronomo: acceso/spento, suono e volume restano uguali da una sessione all'altra
         engine.metroOn = props->getBoolValue ("metroOn", false);
         engine.metroSound = props->getIntValue ("metroSound", 0);
         engine.metroVolume = (float) props->getDoubleValue ("metroVolume", 0.5);
+        engine.metroPitch = (float) props->getDoubleValue ("metroPitch", 0.0);
         engine.bpm = (float) props->getDoubleValue ("bpm", 120.0);
         engine.sigIndex = props->getIntValue ("sig", 2);
         // tuner: muta l'uscita quando si accende, a meno che l'utente non abbia scelto di no (resta tra le sessioni)
@@ -83,6 +84,7 @@ public:
             }
         deviceManager.addAudioCallback (&audio);
         window = std::make_unique<MainWindow> (engine, deviceManager);
+        if (auto* rc = dynamic_cast<rig::RigComponent*> (window->getContentComponent())) rc->saveSessionOnClose = true;
         // primo avvio: una finestra spiega che b-rig non contiene IR di casse (si vede una volta sola)
         if (! props->getBoolValue ("welcomeShown", false))
             if (auto* rc = dynamic_cast<rig::RigComponent*> (window->getContentComponent()))
@@ -100,6 +102,7 @@ public:
         props->setValue ("metroOn", engine.metroOn.load());
         props->setValue ("metroSound", engine.metroSound.load());
         props->setValue ("metroVolume", (double) engine.metroVolume.load());
+        props->setValue ("metroPitch", (double) engine.metroPitch.load());
         props->setValue ("bpm", (double) engine.bpm.load());
         props->setValue ("sig", engine.sigIndex.load());
         props->setValue ("tunerMutes", engine.tunerMutes.load());

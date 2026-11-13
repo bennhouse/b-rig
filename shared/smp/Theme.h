@@ -16,6 +16,7 @@
  #define SMP_IN_RIG 0
 #endif
 
+#include "Palette.h"   // i colori di accento della suite (SMP_ACCENT_ARGB=BSUITE_ACCENT_...)
 #ifndef SMP_ACCENT_ARGB
  #error "Definire SMP_ACCENT_ARGB nel CMakeLists del plugin (es. 0xffffa200)"
 #endif
@@ -25,7 +26,7 @@ namespace ui
     constexpr bool kInRig = SMP_IN_RIG != 0;
 
     // --- Palette
-    inline const juce::Colour background  { 0xff121212 };   // sfondo
+    inline const juce::Colour background  { 0xff0d0d0f };   // sfondo: ovunque lo stesso (finestre, riquadri, b-rig)
     inline const juce::Colour onAccent    { 0xff121212 };   // testo sopra il colore di accento
     inline const juce::Colour labelStatic { 0xff8e8e8e };   // etichette descrittive (delverb, freq, mix...)
     inline const juce::Colour selector    { 0xffcccccc };   // testo dei selettori inattivi

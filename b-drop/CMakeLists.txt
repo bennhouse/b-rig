@@ -41,7 +41,7 @@ set(BDROP_SOURCES
 
 target_sources(BDrop PRIVATE ${BDROP_SOURCES})
 target_include_directories(BDrop PRIVATE Source ../shared)
-target_compile_definitions(BDrop PRIVATE SMP_ACCENT_ARGB=0xffc084fc)   
+target_compile_definitions(BDrop PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DROP)   
 target_compile_definitions(BDrop PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BDrop
     PRIVATE BDropAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BDrop
 juce_add_console_app(BDropTests PRODUCT_NAME "BDropTests")
 target_sources(BDropTests PRIVATE Tests/Tests.cpp ${BDROP_SOURCES})
 target_include_directories(BDropTests PRIVATE Source ../shared)
-target_compile_definitions(BDropTests PRIVATE SMP_ACCENT_ARGB=0xffc084fc JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BDropTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DROP JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BDropTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BDropTests PRIVATE BDropAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

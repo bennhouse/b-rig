@@ -203,7 +203,11 @@ struct GateDetector
         }
     }
     float snrDb() const noexcept { return 20.0f * std::log10 (cleanEnv + 1.0e-9f) - floorDb; }
-    std::array<float, 32> hist {}; int hpos = 0;
+    // stop delle corde: picco dell'inviluppo veloce sugli ultimi 25 ms contro quello dei 25 ms prima (ogni 16 campioni).
+    // Su una finestra più lunga del periodo delle note basse (82 Hz = 12 ms, 41 Hz = 24 ms) un'onda che suona non
+    // sembra mai uno stop; prima il confronto su 8 ms scambiava il calo tra due picchi di una nota bassa per uno stop.
+    std::array<float, 256> hist {}; int hpos = 0, histSpan = 75;
+    bool lowest = false;   // soglia al minimo: solo il gate a soglia, niente stop e niente soglia automatica
     double fs = 48000;
     void prepare (double rate) noexcept
     {
@@ -211,13 +215,14 @@ struct GateDetector
         lfHp = {}; lfHp.set (sp::Bq::HP, fs, 80.0, 0.7071); lfLp = {}; lfLp.set (sp::Bq::LP, fs, 600.0, 0.7071);
         hfHp = {}; hfHp.set (sp::Bq::HP, fs, 2500.0, 0.7071);
         eA = sp::coefMs (0.5, fs); eR = sp::coefMs (20.0, fs); bA = sp::coefMs (5.0, fs); bR = sp::coefMs (60.0, fs);
-        atk = 1.0f - sp::coefMs (0.3, fs); relSlow = 1.0f - sp::coefMs (180.0, fs); relFast = 1.0f - sp::coefMs (8.0, fs); relMid = 1.0f - sp::coefMs (60.0, fs); relCur = relSlow;
+        atk = 1.0f - sp::coefMs (0.3, fs); relSlow = 1.0f - sp::coefMs (300.0, fs); relFast = 1.0f - sp::coefMs (8.0, fs); relMid = 1.0f - sp::coefMs (60.0, fs); relCur = relSlow;
         fR = sp::coefMs (3.0, fs);
-        holdSamples = (int) (0.02 * fs); chunkLen = (int) (0.05 * fs);
+        holdSamples = (int) (0.03 * fs); chunkLen = (int) (0.05 * fs);
+        histSpan = juce::jlimit (8, 127, (int) (0.025 * fs / 16.0));
         reset();
     }
     void reset() noexcept { autoFloorDb = -120.0f; chunkFast = 0; chunkN = chunkNoisy = autoPos = 0; autoOpen = autoClose = 0; floorDb = -120.0f; chunkMin = 1.0e9f; chunkPos = 0; warm = 0; cleanEnv = 0; hist.fill (0.0f); hpos = 0; fast = 0; collapsed = stopped = false; env = eLf = eHf = lastEnv = 0; gain = 0; open = false; holdLeft = 0; lfHp.reset(); lfLp.reset(); hfHp.reset(); }
-    void setThreshold (float db) noexcept { openThr = sp::dbToGain (db); closeThr = sp::dbToGain (db - 4.0f); }
+    void setThreshold (float db) noexcept { openThr = sp::dbToGain (db); closeThr = sp::dbToGain (db - 6.0f); lowest = db <= -109.5f; }
     // x = DI; restituisce il guadagno del gate (0..1), aggiornando il rilascio ogni 16 campioni
     inline float process (float x, int i) noexcept
     {
@@ -228,17 +233,20 @@ struct GateDetector
         eLf = lf > eLf ? bA * (eLf - lf) + lf : bR * (eLf - lf) + lf;
         eHf = hf > eHf ? bA * (eHf - hf) + hf : bR * (eHf - hf) + hf;
         trackAuto (chunkLen);
-        const float oThr = std::max (openThr, autoOpen), cThr = std::max (closeThr, autoClose);
+        const float oThr = lowest ? openThr : std::max (openThr, autoOpen), cThr = lowest ? closeThr : std::max (closeThr, autoClose);
         // isteresi 4 dB sull'inviluppo veloce, con 20 ms di tenuta (copre il periodo delle note più basse)
         if (open) { if (fast < cThr) { if (holdLeft > 0) --holdLeft; else open = false; } else holdLeft = holdSamples; }
         else if (fast > std::max (oThr, reopen)) { open = true; holdLeft = holdSamples; stopped = false; reopen = 0; }   // nuova plettrata
         if (stopped) reopen = std::min (reopen, fast * 2.0f);   // dopo uno stop riapre solo un inviluppo che risale
         if ((i & 15) == 0)
         {
-            // stop delle corde: l'inviluppo veloce crolla di oltre 14 dB in ~8 ms (palm-mute, staccato, mano sulle corde)
-            const float before = hist[(size_t) ((hpos - 24) & 31)];
-            hist[(size_t) hpos] = fast; hpos = (hpos + 1) & 31;
-            collapsed = before > closeThr * 2.0f && fast < before * 0.2f;
+            // stop delle corde (palm-mute, staccato, mano sulle corde): il picco degli ultimi 25 ms è oltre 20 dB sotto
+            // quello dei 25 ms prima
+            hist[(size_t) hpos] = fast; hpos = (hpos + 1) & 255;
+            float recent = 0.0f, before = 0.0f;
+            for (int k = 1; k <= histSpan; ++k) recent = std::max (recent, hist[(size_t) ((hpos - k) & 255)]);
+            for (int k = histSpan + 1; k <= 2 * histSpan; ++k) before = std::max (before, hist[(size_t) ((hpos - k) & 255)]);
+            collapsed = ! lowest && before > closeThr * 2.0f && recent < before * 0.1f;
             if (collapsed && ! stopped) { stopped = true; open = false; reopen = fast * 2.0f; }   // stop: chiude subito, resta agganciato fino alla plettrata successiva
             const bool periodic = ! stopped && eLf > 2.0f * eHf && eLf > closeThr;   // fondamentali che suonano: coda musicale
             relCur = stopped ? relFast : (periodic ? relSlow : relMid);

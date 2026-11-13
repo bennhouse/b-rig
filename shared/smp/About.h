@@ -10,8 +10,8 @@ inline juce::String aboutText (const juce::String& name)
     static const std::pair<const char*, const char*> texts[] = {
         { "focus",     "A zero-latency denoiser for the guitar DI. Four bands with their own detectors cut hiss, fizz and hum "
                        "between and under the notes, so the amp sim gets real silence while every pick attack passes untouched." },
-        { "tight",     "Sculpts the DI before the amp: a tuning-aware low cut, a palm-mute clamp on the low band, "
-                       "pick bite on the attack and a mid push. Transparent until you pick a tuning." },
+        { "comp",      "A compressor for guitar and for everything else: clean, opto, fet and squash styles, plus a three-band "
+                       "multi tuned for guitar. The graph shows the curve, where the sound is on it and the gain reduction over time." },
         { "distort",   "Five distortions (tube, drive, rat, fuzz, fold) with anti-aliased waveshaping, a tone control "
                        "that balances lows and highs, low cut, hi cut and mix. Each type remembers its own settings while the plugin is open." },
         { "wire", "A sub-harmonic synth and fuzz driven by an analog-style phase-locked loop: the guitar is tracked and "

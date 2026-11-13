@@ -2,17 +2,17 @@
 
 Tunes the guitar down (or up) in real time, from -12 to +12 semitones. Put it in the first slot, on the DI.
 
-**Formats:** AU, VST3 · **Platforms:** macOS (universal); Windows/Linux via the same CMake project · **Latency reported to the host:** 0 samples (the shifted note is about 7-9 ms behind, the pick click is not) · **Channels:** mono in, mono or stereo out · **CPU:** about 0.3 % of one core
+**Formats:** AU, VST3 · **Platforms:** macOS (universal); Windows/Linux via the same CMake project · **Latency reported to the host:** 0 samples (the shifted note is one analysis frame behind, about 22 ms at 48 kHz; the pick click and the dry signal are not) · **Channels:** mono in, mono or stereo out · **CPU:** about 0.3 % of one core
 
 ## How it works
 
-No FFT phase vocoder: those need 40-85 ms of audio. Everything happens in the time domain:
+A polyphonic shifter that never guesses the note: the pitch ratio is a fixed number, 2^((semitones + cents/100) / 12), so chords and single notes are shifted the same way and the tuning never hunts.
 
-1. **Two-head shifter.** A circular delay line is read by two heads that turn over a 14 ms grain (672 samples at 48 kHz), half a grain apart, each weighted by a Hann window (the two windows always add up to 1).
-2. **Phase lock.** When a head starts a new grain it looks for the point whose recent waveform best matches the other head: normalised correlation over 256 samples taken every 2nd sample, searched over one period of the lowest note (640 samples at 48 kHz), then a parabola through the best three points for the fractional sample. Among near-equal matches it takes the shortest delay, so high notes have less latency. This keeps the pitch exact and chords free of tremolo.
-3. **Zero-lag pick.** A detector with 0.1 ms attack and 6 ms release on the band above 3.5 kHz (the pick click, which has no pitch) spots each attack and lets that band through directly, at zero latency, for 4 ms. You hear the pick at once; the shifted note follows.
-4. **Tension.** Only when going down, in proportion to the semitones (full at -12): a high-pass from 45 to 95 Hz, a cut of up to 6 dB at 165 Hz (Q 1.4) and up to 3 dB of presence above 3 kHz, so palm mutes in low tunings stay tight.
-5. **Mix and on/off.** The dry signal has no delay. `detune` crossfades over 10 ms; when it is off, or at 0 semitones (the default), the output is the input, bit for bit (no head delay either).
+1. **Pre-filter.** A 2nd-order Butterworth high-pass at 52 Hz on the shifter's input, so the mechanical rumble of the picking hand is not shifted down into the low end.
+2. **Phase vocoder with locked peaks (Laroche and Dolson).** FFT of 1024 points at 44.1/48 kHz (2048 at 88.2/96 kHz), synthesis hop 256 (4 times overlap), Hann window for analysis and synthesis. It stretches time by the ratio (analysis hop = 256 / ratio) and a Hermite resampler reads it back at the speed of the ratio: the length is the same as before and the pitch moves exactly, at any frequency. For each frame it finds the magnitude and the true frequency of every bin (from the unwrapped phase advance), the local peaks and the region of each peak (the bins closer to it than to any other peak). Only the peaks advance their synthesis phase; every bin in a region keeps, against its peak, the phase relation it had at the input (identity phase locking). Each harmonic of each string moves as one rigid body: no tremolo on chords, no phasiness.
+3. **Attack.** A transient detector on the DI (fast envelope well above the slow one) resets all synthesis phases to the input phases at each new pick, so the shifted note starts aligned with the attack. `zero-lag pick` lets the part of the DI above 2.8 kHz through directly, at zero latency, for 5 ms: you hear the pick at once and the shifted note follows one frame later.
+4. **Tension.** Only when going down, in proportion to the semitones (full at -12) and to `tension`: a cut of up to 4.5 dB at 160 Hz takes the mud off, and a shelf of up to +2 dB at 3.2 kHz gives back the brightness a lower tuning loses, like a baritone with tight strings.
+5. **Mix and on/off.** The dry signal has no delay. `detune` crossfades over 10 ms; when it is off, or at 0 semitones (the default), the output is the input, bit for bit.
 
 ## Controls
 
@@ -28,13 +28,15 @@ Value boxes: drag horizontally, click the arrows or use the mouse wheel. Double-
 
 ## Measured (see `Tests/Tests.cpp`)
 
-- 440 Hz at -2 st comes out at 392.00 Hz; 220 Hz at -12 st at 110.00 Hz; +7 st +30 cents within 1 cent.
-- Eight notes from 82 to 659 Hz at -2, -5, -12 and +5 semitones: worst error 4 cents.
-- The shifted note is audible 6.5 ms after the note starts (196 Hz).
+- 440 Hz at -2 st comes out at 392.00 Hz; 220 Hz at -12 st at 110.06 Hz; +7 st +30 cents at 335.39 Hz (exact).
+- Eight notes from 82 to 659 Hz at -2, -5, -12 and +5 semitones: worst error 0 cents (within the 1-cent measurement step).
+- The shifted note is audible 22.5 ms after the note starts (196 Hz, one frame).
 - A pick click comes out in the first millisecond with `zero-lag pick` (-19 dB), nothing without it.
 - A two-note chord at -5 st: level within 0.4 dB over 40 ms windows (no tremolo).
-- At -12 st, 50 Hz in the output is 11.7 dB lower with tension 100 % than with 0 %.
+- At -5 st the shifted note keeps the input level (within 0.01 dB).
+- At -12 st with tension 100 %, 160 Hz is 4.5 dB lower than with tension 0 %.
 - `detune` off, or 0 semitones (the default): output identical to the input.
+- CPU: about 0.6 % of one core.
 
 ## About panel
 

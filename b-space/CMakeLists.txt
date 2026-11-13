@@ -41,7 +41,7 @@ set(BSPACE_SOURCES
 
 target_sources(BSpace PRIVATE ${BSPACE_SOURCES})
 target_include_directories(BSpace PRIVATE Source ../shared)
-target_compile_definitions(BSpace PRIVATE SMP_ACCENT_ARGB=0xffa78bfa)   
+target_compile_definitions(BSpace PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_SPACE)   
 target_compile_definitions(BSpace PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BSpace
     PRIVATE BSpaceAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BSpace
 juce_add_console_app(BSpaceTests PRODUCT_NAME "BSpaceTests")
 target_sources(BSpaceTests PRIVATE Tests/Tests.cpp ${BSPACE_SOURCES})
 target_include_directories(BSpaceTests PRIVATE Source ../shared)
-target_compile_definitions(BSpaceTests PRIVATE SMP_ACCENT_ARGB=0xffa78bfa JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BSpaceTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_SPACE JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BSpaceTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BSpaceTests PRIVATE BSpaceAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

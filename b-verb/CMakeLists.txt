@@ -41,7 +41,7 @@ set(BVERB_SOURCES
 
 target_sources(BVerb PRIVATE ${BVERB_SOURCES})
 target_include_directories(BVerb PRIVATE Source ../shared)
-target_compile_definitions(BVerb PRIVATE SMP_ACCENT_ARGB=0xff06b6d4)   
+target_compile_definitions(BVerb PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_VERB)   
 target_compile_definitions(BVerb PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BVerb
     PRIVATE BVerbAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BVerb
 juce_add_console_app(BVerbTests PRODUCT_NAME "BVerbTests")
 target_sources(BVerbTests PRIVATE Tests/Tests.cpp ${BVERB_SOURCES})
 target_include_directories(BVerbTests PRIVATE Source ../shared)
-target_compile_definitions(BVerbTests PRIVATE SMP_ACCENT_ARGB=0xff06b6d4 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BVerbTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_VERB JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BVerbTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BVerbTests PRIVATE BVerbAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

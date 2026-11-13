@@ -41,7 +41,7 @@ set(BWIRE_SOURCES
 
 target_sources(BWire PRIVATE ${BWIRE_SOURCES})
 target_include_directories(BWire PRIVATE Source ../shared)
-target_compile_definitions(BWire PRIVATE SMP_ACCENT_ARGB=0xff6366f1)   
+target_compile_definitions(BWire PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_WIRE)   
 target_compile_definitions(BWire PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BWire
     PRIVATE BWireAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BWire
 juce_add_console_app(BWireTests PRODUCT_NAME "BWireTests")
 target_sources(BWireTests PRIVATE Tests/Tests.cpp ${BWIRE_SOURCES})
 target_include_directories(BWireTests PRIVATE Source ../shared)
-target_compile_definitions(BWireTests PRIVATE SMP_ACCENT_ARGB=0xff6366f1 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BWireTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_WIRE JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BWireTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BWireTests PRIVATE BWireAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

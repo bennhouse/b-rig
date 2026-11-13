@@ -163,7 +163,14 @@ public:
     static bool renamePreset (const juce::String& from, const juce::String& to);
     static juce::String nextUserName();
     static juce::String startupPreset();                     // preset che si carica all'avvio (anche "clean slate")
-    static void setStartupPreset (const juce::String&);
+    static void setStartupPreset (const juce::String&);   // vuoto = nessuna scelta: all'avvio la sessione di prima
+    static bool hasStartupChoice();
+    // sessione: alla chiusura la catena com'è (anche non salvata) e il preset da cui viene; all'avvio si riapre
+    static juce::File sessionFile();
+    void saveSession();
+    bool saveSessionOnClose = false;   // solo l'app (non i test)
+    static juce::String& bootPreset() { static juce::String s; return s; }
+    static bool& bootDirty() { static bool d = false; return d; }
     static void loadStartup (RigEngine&);                    // all'avvio: il preset scelto, altrimenti la catena vuota
     void setStartupForTest (int row);
     struct RigSnapshot { juce::ValueTree rig; juce::String preset; bool dirty = false; };
@@ -184,7 +191,9 @@ public:
     void selectPresetForTest (int row);
     void duplicatePresetForTest();
     void loadPresetRowForTest (int row);
-    void saveFromTopBar();             // save nella barra: nuovo preset e nome da scrivere nella schermata dei preset
+    void saveFromTopBar();             // new nella barra: nuovo preset e nome da scrivere nella schermata dei preset
+    void saveCurrent();                // save nella barra: aggiorna il preset caricato
+    bool saveEnabledForTest() const { return saveBtn.isEnabled() && newBtn.isEnabled(); }
     bool isPresetRenaming() const;
     void renamePresetForTest (const juce::String&);
     void paramTouchedForTest() { lastInputMs = juce::Time::getMillisecondCounterHiRes(); paramTouched(); }
@@ -308,7 +317,7 @@ private:
     Slot* pressSlot = nullptr;   // card premuta (clic o inizio di un trascinamento)
     Slot* dragSlot = nullptr;    // card che si sta trascinando
     int dragX = 0, dragY = 0, dragGrabDx = 0, dragGrabDy = 0;
-    void paintCard (juce::Graphics&, int index, juce::Rectangle<int>, bool ghost);
+    void paintCard (juce::Graphics&, int index, juce::Rectangle<int>, bool ghost, juce::Rectangle<int> frame);
     // trascinamento con lo split: il ramo da cui è partito; shift tenuto premuto mostra l'altro ramo
     int dragHomeLane = 0;
     void dragShift (bool shift);
@@ -346,7 +355,7 @@ private:
     double lastInputMs = 0, suppressUntilMs = 0;
 
     // title bar e tuner
-    FlatButton saveBtn, presetsBtn, setupBtn, tapBtn, muteBtn, stereoBtn, widenBtn;
+    FlatButton saveBtn, newBtn, presetsBtn, setupBtn, tapBtn, muteBtn, stereoBtn, widenBtn;
     int sideBtnW() const;   // larghezza comune di stereo e widen
     MetroButton metroBtn;
     ui::ValueBox bpmBox;

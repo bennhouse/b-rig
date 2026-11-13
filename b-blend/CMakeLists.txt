@@ -41,7 +41,7 @@ set(BBLEND_SOURCES
 
 target_sources(BBlend PRIVATE ${BBLEND_SOURCES})
 target_include_directories(BBlend PRIVATE Source ../shared)
-target_compile_definitions(BBlend PRIVATE SMP_ACCENT_ARGB=0xff14b8a6)   
+target_compile_definitions(BBlend PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_BLEND)   
 target_compile_definitions(BBlend PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BBlend
     PRIVATE BBlendAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BBlend
 juce_add_console_app(BBlendTests PRODUCT_NAME "BBlendTests")
 target_sources(BBlendTests PRIVATE Tests/Tests.cpp ${BBLEND_SOURCES})
 target_include_directories(BBlendTests PRIVATE Source ../shared)
-target_compile_definitions(BBlendTests PRIVATE SMP_ACCENT_ARGB=0xff14b8a6 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BBlendTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_BLEND JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BBlendTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BBlendTests PRIVATE BBlendAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

@@ -1,9 +1,10 @@
 #include "Modules.h"
+#include "smp/Palette.h"
 
 #define RIG_DECLARE(id) std::unique_ptr<juce::AudioProcessor> rigMake_##id();
 RIG_DECLARE (adapt) RIG_DECLARE (aftercab) RIG_DECLARE (amp) RIG_DECLARE (blend) RIG_DECLARE (delay) RIG_DECLARE (distort) RIG_DECLARE (verb)
 RIG_DECLARE (drop) RIG_DECLARE (dynaverb) RIG_DECLARE (focus) RIG_DECLARE (freshstrings) RIG_DECLARE (meter) RIG_DECLARE (space) RIG_DECLARE (starve)
-RIG_DECLARE (tight) RIG_DECLARE (wire)
+RIG_DECLARE (comp) RIG_DECLARE (wire)
 #undef RIG_DECLARE
 bool rigBlendHasIr (juce::AudioProcessor&);
 
@@ -20,42 +21,42 @@ const std::vector<ModuleInfo>& modules()
             v.push_back ({ id, juce::String ("b-") + id, juce::Colour (argb), cat, order, info, std::move (make), safe, {} });
         };
         // PRE / DI
-        add ("focus", 0xff3d8bff, C::pre, 10,
+        add ("focus", BSUITE_ACCENT_FOCUS, C::pre, 10,
              "Zero-latency denoiser for the DI: four bands cut hiss, fizz and hum between the notes.\nControls: threshold, strength, release.\nFirst slot on the clean DI.", rigMake_focus);
-        add ("drop", 0xffc084fc, C::pre, 5,
+        add ("drop", BSUITE_ACCENT_DROP, C::pre, 5,
              "Tunes the guitar down (or up) in real time, from -12 to +12 semitones. The pick click passes at zero latency, the shifted note follows about 8 ms later.\nControls: detune, range, zero-lag pick, semitones, fine, tension, mix.\nFirst slot on the DI.", rigMake_drop);
-        add ("freshstrings", 0xfffb923c, C::pre, 20,
+        add ("freshstrings", BSUITE_ACCENT_FRESHSTRINGS, C::pre, 20,
              "New-string brightness on the pick attack, pick material, string gauge and pickup position, on the clean DI.\nControls: pick, gauge, pickup, freshness, attack, tension, output.\nAfter b-focus, before any drive or amp.", rigMake_freshstrings);
         v.back().name = "b-fs";   // nome corto ovunque nell'app (quello completo è b-freshstrings)
-        add ("tight", 0xff84cc16, C::pre, 30,
-             "Shapes the DI before the amp: a low cut that follows your tuning, a palm-mute clamp, pick bite and a mid push.\nControls: tuning, clamp, bite, push, gain.\nAfter b-focus, before any drive or amp.", rigMake_tight);
+        add ("comp", BSUITE_ACCENT_COMP, C::pre, 30,
+             "A compressor tuned for guitar, with five styles: clean, opto, fet, squash and multi (three bands set up for guitar).\nControls: style, threshold, ratio, attack, release, auto gain, knee, sidechain high-pass, parallel mix, multiband amounts, makeup, output.\nBefore the amp to even out the picking, or after the cab.", rigMake_comp);
         // CORE / AMP
-        add ("amp", 0xffe11d48, C::core, 50,
-             "Three-channel amp head (clean, crunch, lead) with noise gate and boost. It needs b-blend after it, with your own cab IR: until then it stays muted.\nControls: channel, gain, tight, bass, mid, treble, presence, resonance, master, level, boost and tone. Every head keeps its own settings.\nAfter the DI tools, before b-blend.", rigMake_amp, true);
-        add ("blend", 0xff14b8a6, C::core, 60,
+        add ("amp", BSUITE_ACCENT_AMP, C::core, 50,
+             "Three-channel amp head (clean, crunch, lead) with noise gate and boost. It stays muted until b-blend follows it; load your own cab IR in b-blend to hear it.\nControls: channel, gain, tight, bass, mid, treble, presence, resonance, master, level, boost and tone. Every head keeps its own settings.\nAfter the DI tools, before b-blend.", rigMake_amp, true);
+        add ("blend", BSUITE_ACCENT_BLEND, C::core, 60,
              "Blends up to four phase-aligned cab IRs on one pad and adds speaker thump and air.\nControls: the pad, thump, air, low cut, high cut.\nRight after the amp.", rigMake_blend);
         v.back().hasCab = rigBlendHasIr;
-        add ("distort", 0xffff4d4d, C::core, 44,
+        add ("distort", BSUITE_ACCENT_DISTORT, C::core, 44,
              "Five distortions: tube, drive, rat, fuzz, fold.\nControls: type, drive, tone, low cut, hi cut, mix, output.\nBefore the amp, like a pedal.", rigMake_distort);
-        add ("wire", 0xff6366f1, C::core, 40,
+        add ("wire", BSUITE_ACCENT_WIRE, C::core, 40,
              "Sub-octave synth and fuzz that tracks the guitar with an analog-style PLL, with an adaptive ring mod.\nControls: tracking, fuzz, glitch, filter, ring, mix, level.\nBefore the amp, on a clean signal.", rigMake_wire);
-        add ("starve", 0xfffb7185, C::core, 42,
+        add ("starve", BSUITE_ACCENT_STARVE, C::core, 42,
              "An under-powered circuit followed by stutter, bit masks and dropouts.\nControls: intensity, volume and mix for each effect, output.\nBefore the amp, or after the cab.", rigMake_starve);
         // POST / SPACE
-        add ("aftercab", 0xffffa200, C::post, 80,
+        add ("aftercab", BSUITE_ACCENT_AFTERCAB, C::post, 80,
              "Post-cab strip: EQ, compressor, delverb (delay, verb, shimmer) and output level matching.\nControls: EQ, comp mode and threshold, verb type and mix, output.\nAfter b-blend.", rigMake_aftercab);
-        add ("delay", 0xff818cf8, C::post, 83,
+        add ("delay", BSUITE_ACCENT_DELAY, C::post, 83,
              "Delay with five characters inside the feedback loop: digital, tape, bbd, lofi, reverse. Tempo sync, tap, stereo offset and ping-pong.\nControls: type, time, sync, tap, feedback, low cut, hi cut, mix, offset, ping-pong, mod, smear, duck, output, trails.\nAfter the cab.", rigMake_delay);
-        add ("verb", 0xff06b6d4, C::post, 84,
+        add ("verb", BSUITE_ACCENT_VERB, C::post, 84,
              "Reverb: room, plate, hall, spring and shimmer, with early reflections, an 8-line feedback network, freeze and ducking.\nControls: type, decay, predelay, size, low cut, hi cut, mix, early, damp, mod, duck, stereo, freeze, output.\nAfter the cab and the delay.", rigMake_verb);
-        add ("space", 0xffa78bfa, C::post, 85,
+        add ("space", BSUITE_ACCENT_SPACE, C::post, 85,
              "Puts the amp in a room: the room with its materials, the amp type, where the amp and the listener stand and where the amp points.\nControls: room, source, dist comp, mix, width, depth, ceiling, angle, air.\nAfter the cab, at the end of the guitar chain.", rigMake_space);
-        add ("dynaverb", 0xfffacc15, C::post, 82,
+        add ("dynaverb", BSUITE_ACCENT_DYNAVERB, C::post, 82,
              "Hears when you play lead lines on the high strings and only then adds a mid boost and a stereo delay. Riffs on the low strings pass untouched.\nControls: crossover, duck delay, sync, split, boost, delay, space, speed.\nAfter the cab.", rigMake_dynaverb);
         // MASTER / UTIL
-        add ("adapt", 0xffde50c9, C::master, 100,
+        add ("adapt", BSUITE_ACCENT_ADAPT, C::master, 100,
              "Prepares a part for phones and small speakers: mono-safe lows, perceived bass, a fixed EQ plus narrow cuts on harsh resonances, true peaks under -1 dBTP.\nControls: safe width, thump, deharsh, monitor.\nAt the end. Check on the monitor, then switch it off before export.", rigMake_adapt);
-        add ("meter", 0xff38bdf8, C::master, 110,
+        add ("meter", BSUITE_ACCENT_METER, C::master, 110,
              "Spectrum, stereo phase and loudness, with LUFS targets for social, YouTube, digital, CD and podcast.\nControls: view, target, gain, auto.\nLast slot.", rigMake_meter);
         return v;
     }();

@@ -1,5 +1,5 @@
-// Test di b-drop: intonazione (-2, -12, +7 st, fine), ritardo, zero-lag pick, accordi senza tremolio,
-// tension, spento = identico, CPU, snapshot.
+// Test di b-drop (phase vocoder a picchi bloccati): intonazione (-2, -12, +7 st, fine, tutta la tastiera), ritardo di un
+// frame, zero-lag pick, accordi senza tremolio, tension, volume, spento = identico, CPU, snapshot.
 #include "PluginEditor.h"
 #include "smp/TestKit.h"
 
@@ -61,7 +61,7 @@ int main()
         std::printf ("       errore massimo su 8 note x 4 trasposizioni: %.1f cent\n", worst);
         check (worst <= 5.0, "intonazione entro 5 cent dal Mi basso al Mi alto", worst);
     }
-    // 3. ritardo della nota trasposta (zero-lag spento): sotto 10 ms
+    // 3. ritardo della nota trasposta (zero-lag spento): un frame del phase vocoder (1024 campioni, 21 ms a 48 kHz)
     {
         auto p = make<BDropProcessor> (1, 1);
         setP (p->apvts, BDropIDs::zeroLag, 0.0f);
@@ -72,7 +72,7 @@ int main()
         int first = -1; for (int i = on; i < 36000; ++i) if (std::abs (y.getSample (0, i)) > 0.1f) { first = i; break; }
         const double ms = (first - on) * 1000.0 / sr;
         std::printf ("       nota trasposta udibile dopo %.2f ms\n", ms);
-        check (first > 0 && ms < 12.0, "la nota trasposta arriva entro 12 ms", ms);
+        check (first > 0 && ms < 26.0, "la nota trasposta arriva entro un frame (26 ms)", ms);
     }
     // 4. zero-lag pick: il clic del plettro esce subito (entro 0,3 ms); spento, nulla prima di 1 ms
     {
@@ -105,20 +105,29 @@ int main()
         std::printf ("       accordo -5 st: RMS su finestre di 40 ms tra %.2f e %.2f dB\n", mn, mx);
         check (mx - mn < 2.5, "accordo: variazione di volume sotto 2,5 dB", mx - mn);
     }
-    // 6. tension: un'ottava sotto, 50 Hz in uscita (da 100 Hz) più bassi con tension 100 % che con 0 %
+    // 6. tension: un'ottava sotto, il taglio a 160 Hz (da 320 Hz in ingresso) è di circa 4,5 dB con tension al 100 %
     {
-        auto level = [&] (float tension)
+        auto level = [&] (float tension, double f0, double fo)
         {
             auto p = make<BDropProcessor> (1, 1);
             setP (p->apvts, BDropIDs::range, 0.0f);
             setP (p->apvts, BDropIDs::semitones, -12.0f);
             setP (p->apvts, BDropIDs::tension, tension);
-            auto y = run (*p, 48000, sine (100.0));
-            return rmsDb (y, 0, 24000, 48000);
+            auto y = run (*p, 48000, sine (f0));
+            return toneDb (y, 0, 24000, 48000, fo);
         };
-        const double t0 = level (0.0f), t1 = level (100.0f);
-        std::printf ("       -12 st, 100 -> 50 Hz: %.1f dB (tension 0) / %.1f dB (tension 100)\n", t0, t1);
-        check (t0 - t1 > 6.0, "tension: le basse sotto 95 Hz si asciugano scendendo di un'ottava", t0 - t1);
+        const double cut = level (0.0f, 320.0, 160.0) - level (100.0f, 320.0, 160.0);
+        std::printf ("       -12 st, 320 -> 160 Hz: tension 100 %% toglie %.1f dB\n", cut);
+        check (cut > 3.5 && cut < 5.5, "tension: taglio di circa 4,5 dB a 160 Hz a -12 st", cut);
+    }
+    // 6b. volume: la nota trasposta esce allo stesso livello dell'ingresso (entro 1,5 dB)
+    {
+        auto p = make<BDropProcessor> (1, 1);
+        setP (p->apvts, BDropIDs::semitones, -5.0f); setP (p->apvts, BDropIDs::tension, 0.0f);
+        auto y = run (*p, 48000, sine (330.0, 0.3));
+        const double d = rmsDb (y, 0, 24000, 48000) - 20.0 * std::log10 (0.3 / std::sqrt (2.0));
+        std::printf ("       -5 st: livello d'uscita %+.2f dB rispetto all'ingresso\n", d);
+        check (std::abs (d) < 1.5, "trasposta allo stesso volume dell'ingresso", d);
     }
     // 7. detune spento: uscita identica all'ingresso (dopo la dissolvenza)
     {

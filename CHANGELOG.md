@@ -2,6 +2,22 @@
 
 All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; every plugin shares the b-suite version, b-rig has its own.
 
+## Unreleased
+
+### Added
+- b-comp, a compressor tuned for guitar, replaces b-tight: clean, opto, fet, squash and multi (three bands set up for guitar) styles, with a graph of the curve, the level and the gain reduction.
+- b-rig: `save` and `new` in the top bar (save updates the loaded preset); the app reopens the last session, unsaved changes included.
+- b-rig: at the end of a split chain `stereo` / `mono`, with the widen delay measured by itself in stereo, and `balance`, which lines up the phase and evens out the volume of the two lanes.
+- b-rig: metronome pitch (−12…+12 semitones) and up to twice the volume, with a soft limit against crackles.
+
+### Changed
+- b-drop: new engine, a phase vocoder with locked peaks (Laroche and Dolson), time stretch plus resampling, a phase reset at each pick and the pick above 2.8 kHz at zero latency: exact tuning on chords and low notes, no tremolo. The shifted note now comes about 22 ms after the pick.
+- b-amp: the noise gate no longer cuts long low notes (the stop detector compares 25 ms peaks instead of 8 ms); `threshold` goes down to −110 dB, where only the threshold works.
+- b-rig: b-amp arms by itself as soon as a b-blend is after it, with or without an IR.
+- b-rig: the four groups of the top bar at the same distance, card outlines closed while the chain scrolls, a thinner and shorter scroll bar, no outline around the open module, the rename field on the preset name.
+- b-aftercab runs mono → stereo inside b-rig, so `spread` works there.
+- One colour palette for the whole suite (`shared/smp/Palette.h`), grouped by role, and the background #0D0D0F everywhere.
+
 ## 0.2.0 beta
 
 ### Added

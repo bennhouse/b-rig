@@ -56,13 +56,13 @@ Each stage, at 2x oversampling (`[ off | 2x | 4x ]`: 4x lowers aliasing further;
 
 ## Noise: DI-keyed dual-stage gate
 
-A real high-gain amp raises the DI noise by up to 60 dB. The whole system switches on and off with `noise gate` (off by default; off = no gate and no hum notch); `threshold` (−90…−20 dB) sets the gate:
+A real high-gain amp raises the DI noise by up to 60 dB. The whole system switches on and off with `noise gate` (off by default; off = no gate and no hum notch); `threshold` (−110…−20 dB) sets the gate. At the minimum (−110 dB) only the threshold works: no stop clamp and no automatic threshold, so nothing is cut while the guitar rings.
 1. **Input guard**: a 35 Hz Butterworth high-pass (DC and rumble) and, when `gate` is above −85 dB, two very narrow notches (Q 40) at 50 and 100 Hz against mains hum.
 2. **One detector, two actions**: the detector reads only the clean DI (before the notches, which would ring), and drives
    - **A**, a VCA before the preamp, so noise never enters the gain stages;
    - **B**, a VCA plus a dynamic two-pole low-pass after the last stage and before the tone stack.
-3. **No chatter**: 4 dB of hysteresis on a fast envelope with a 20 ms hold. While the fundamentals (80–600 Hz) dominate the hiss (> 2.5 kHz), long notes fade out with a slow 180 ms release.
-4. **Palm-mute / stop clamp**: when the envelope collapses (more than 14 dB in about 8 ms) the gate closes at once with an 8 ms release, and reopens only on a new rising pick.
+3. **No chatter**: 6 dB of hysteresis on a fast envelope with a 30 ms hold. While the fundamentals (80–600 Hz) dominate the hiss (> 2.5 kHz), long notes fade out with a slow 300 ms release.
+4. **Palm-mute / stop clamp**: when the peak of the last 25 ms is more than 20 dB below the peak of the 25 ms before (the strings were stopped), the gate closes at once with an 8 ms release, and reopens only on a new rising pick. The window is longer than the period of the lowest notes (82 Hz = 12 ms, 41 Hz = 24 ms): before, an 8 ms comparison took the dip between two peaks of a low note for a stop and cut the note while it was still ringing. Tested: a low E (82 Hz) and a drop A (55 Hz) fading slowly come out within 0.04 dB of the same notes with the gate off.
 5. **Automatic threshold**: with a lot of gain on the audio interface the DI hiss can sit above `threshold` and keep the gate open; the amp then raises it by 30–50 dB and squashes it while you play, which sounds like a noise that ducks under the notes. The gate recognises the hiss (more energy above 2.5 kHz than between 80 and 600 Hz, the opposite of a guitar), measures its level on 50 ms blocks and keeps the working threshold 8 dB above it. It drops at once and rises by 0.5 dB every 50 ms, so a stray pick does not move it. `threshold` is still the minimum.
 6. **Hiss under the tails**: the gate measures the noise floor of the hum-free DI by itself (in the pauses) and the post-preamp low-pass follows the signal-to-noise ratio: it stays at 12 kHz while the note is well above the noise and closes towards 3.5 kHz as a tail sinks into the hiss.
 7. **Input anti-hiss**: a fixed two-pole 6.5 kHz low-pass on the DI before the gain stages. A pickup produces almost nothing up there, while 80 % of white DI noise lives there and would become the fizz under every tail.

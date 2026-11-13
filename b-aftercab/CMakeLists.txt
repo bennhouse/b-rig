@@ -37,7 +37,7 @@ juce_add_binary_data(BAftercabAssets SOURCES
 # Codice DSP condiviso tra plugin e test
 add_library(BAftercabDSP INTERFACE)
 target_include_directories(BAftercabDSP INTERFACE Source ../shared)
-target_compile_definitions(BAftercabDSP INTERFACE SMP_ACCENT_ARGB=0xffffa200)   # accento arancio
+target_compile_definitions(BAftercabDSP INTERFACE SMP_ACCENT_ARGB=BSUITE_ACCENT_AFTERCAB)   # accento arancio
 
 target_sources(BAftercab PRIVATE
     Source/PluginProcessor.cpp

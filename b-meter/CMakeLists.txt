@@ -41,7 +41,7 @@ set(BMETER_SOURCES
 
 target_sources(BMeter PRIVATE ${BMETER_SOURCES})
 target_include_directories(BMeter PRIVATE Source ../shared)
-target_compile_definitions(BMeter PRIVATE SMP_ACCENT_ARGB=0xff38bdf8)   
+target_compile_definitions(BMeter PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_METER)   
 target_compile_definitions(BMeter PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BMeter
     PRIVATE BMeterAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BMeter
 juce_add_console_app(BMeterTests PRODUCT_NAME "BMeterTests")
 target_sources(BMeterTests PRIVATE Tests/Tests.cpp ${BMETER_SOURCES})
 target_include_directories(BMeterTests PRIVATE Source ../shared)
-target_compile_definitions(BMeterTests PRIVATE SMP_ACCENT_ARGB=0xff38bdf8 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BMeterTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_METER JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BMeterTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BMeterTests PRIVATE BMeterAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

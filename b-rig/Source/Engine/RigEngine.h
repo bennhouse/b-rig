@@ -88,17 +88,32 @@ public:
     // viewLane e una copia nell'altro (il suono resta uguale). Dopo: i primi moduli di viewLane entrano
     // nella parte comune e lo stesso tipo nell'altro ramo si toglie.
     void moveSplit (int viewLane, int newTrunk);
-    std::atomic<bool> wide { false };    // "stereo": ramo a a sinistra, b a destra (acceso di default quando si divide)
-    // "widen": il ramo b esce un poco dopo (5-25 ms). Il tempo si misura sul suono vero: si registrano 0,75 s dei due
-    // rami mentre si suona e si sceglie il ritardo in cui a e b sono più simili (correlazione massima), così sommati in
-    // mono si rinforzano invece di cancellarsi
+    // fine dei rami:
+    //   "stereo" (acceso di default quando si divide) = a a sinistra, b a destra; spento = "mono", somma a -6 dB.
+    //   "widen" (in stereo, automatico): b esce un poco dopo (5-25 ms), al ritardo misurato in cui a e b sono più simili
+    //   (correlazione massima), così anche sommati in mono si rinforzano invece di cancellarsi.
+    //   "balance" (anche in mono): allinea la fase dei due rami (ritardo entro ±5 ms ed eventuale polarità invertita)
+    //   e ne pareggia il volume. Si calcola una volta e resta fisso finché non si rilancia.
+    // Le misure registrano 0,75 s dei due rami mentre si suona (sopra -50 dBFS).
+    std::atomic<bool> wide { false };
     std::atomic<bool> widen { false };
     std::atomic<float> widenMs { 0.0f };
-    void startWidenMeasure();             // thread dei messaggi
-    void cancelWidenMeasure() { widenState = 0; }
-    bool isMeasuringWiden() const { return widenState.load() != 0; }
-    bool pollWiden();                     // thread dei messaggi: true quando la misura è finita (widen acceso)
+    std::atomic<bool> balance { false };
+    std::atomic<float> gainA { 1.0f }, gainB { 1.0f };   // balance: guadagno di ogni ramo (b negativo = polarità invertita)
+    std::atomic<float> alignMs { 0.0f };                  // balance: > 0 b in ritardo, < 0 a in ritardo
+    enum MeasureFor { kWiden = 1, kBalance = 2 };
+    void startMeasure (int what);         // thread dei messaggi; più richieste insieme usano la stessa registrazione
+    void startWidenMeasure() { startMeasure (kWiden); }
+    void cancelMeasure() { widenState = 0; measureWhat = 0; }
+    void cancelWidenMeasure() { cancelMeasure(); }
+    bool isMeasuring (int what = kWiden | kBalance) const { return widenState.load() != 0 && (measureWhat.load() & what) != 0; }
+    bool isMeasuringWiden() const { return isMeasuring (kWiden); }
+    int pollMeasure();                    // thread dei messaggi: le misure appena finite (kWiden / kBalance), 0 se nessuna
+    bool pollWiden() { return (pollMeasure() & kWiden) != 0; }
     static float bestWidenLag (const float* a, const float* b, int n, double fs);   // ms; per i test
+    // balance: ritardo (ms, > 0 = b in ritardo) e segno della correlazione migliori entro ±5 ms; guadagni che pareggiano
+    struct BalanceResult { float alignMs = 0, gainA = 1, gainB = 1; };
+    static BalanceResult measureBalance (const float* a, const float* b, int n, double fs);
 
     juce::ValueTree saveRig() const;
     void loadRig (const juce::ValueTree&);
@@ -116,6 +131,7 @@ public:
     std::atomic<bool> metroOn { false };
     std::atomic<int> metroSound { 0 };        // 0 beep, 1 hat, 2 wood
     std::atomic<float> metroVolume { 0.5f };  // 0..1
+    std::atomic<float> metroPitch { 0.0f };   // semitoni, -12..+12 (beep e wood; hat più chiaro o più scuro)
     static constexpr int kNumSounds = 3;
     static constexpr std::array<const char*, kNumSounds> kSoundNames { { "beep", "hat", "wood" } };
     std::atomic<float> bpm { 120.0f };
@@ -148,6 +164,7 @@ private:
     void insertSlot (std::unique_ptr<Slot>, int lane, int pos);
     bool isCab (const Slot&, bool needIr) const;
     void armIfCovered (Slot&);
+    void armCovered();   // arma ogni b-amp muto per protezione che ha un b-blend dopo di sé
     bool split = false;
     bool metronome (int n) noexcept;   // false = spento (nessun click in metroBuf)
 
@@ -163,12 +180,13 @@ private:
     juce::AudioBuffer<float> work;     // 2 canali: il segnale della catena (e del ramo A)
     juce::AudioBuffer<float> workB;    // ramo B
     float wideMix = 0.0f;
-    // widen: linea di ritardo del ramo b (2 canali) e misura
+    // fine dei rami: una linea di ritardo per ramo (2 canali ciascuno), guadagni, misura
     static constexpr int kWidenBuf = 1 << 13;
-    std::array<std::vector<float>, 2> widenLine;
+    std::array<std::vector<float>, 4> laneLine;      // a sinistra, a destra, b sinistra, b destra
     int widenW = 0;
-    float widenCur = 0.0f, widenSmooth = 0.001f;   // ritardo attuale in campioni (insegue quello voluto)
+    float delayCur[2] = { 0.0f, 0.0f }, gainCur[2] = { 1.0f, 1.0f }, widenSmooth = 0.001f;
     std::atomic<int> widenState { 0 };              // 0 niente, 1 registra, 2 pronto
+    std::atomic<int> measureWhat { 0 };
     std::vector<float> capA, capB;
     int capPos = 0;
     std::vector<float> metroBuf;       // il click del metronomo: a parte, si somma dopo il limiter della chitarra
@@ -181,6 +199,7 @@ private:
     double samplesToBeat = 0.0;
     int beat = -1;
     float clickPhase = 0, clickInc = 0, clickEnv = 0, clickDecay = 0, clickPhase2 = 0, clickInc2 = 0, clickPrev = 0, clickPrev2 = 0;
+    float hatMix = 0.5f;
     std::array<float, kNumSounds> decays {};
     int clickSound = 0;
     juce::uint32 noise = 22222;

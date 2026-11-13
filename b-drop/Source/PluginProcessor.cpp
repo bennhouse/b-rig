@@ -1,24 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-namespace
-{
-    // finestra di Hann in tabella (niente coseno per campione)
-    struct HannTable
-    {
-        static constexpr int N = 1024;
-        std::array<float, N + 2> t {};
-        HannTable() { for (int i = 0; i <= N + 1; ++i) t[(size_t) i] = 0.5f - 0.5f * (float) std::cos (juce::MathConstants<double>::twoPi * juce::jmin (i, N) / N); }
-        float operator() (float p) const noexcept
-        {
-            p = juce::jlimit (0.0f, 1.0f, p) * (float) N;
-            const int i = (int) p; const float f = p - (float) i;
-            return t[(size_t) i] + f * (t[(size_t) i + 1] - t[(size_t) i]);
-        }
-    };
-    const HannTable& hann() { static const HannTable h; return h; }
-}
-
 BDropProcessor::BDropProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::mono(), true)
                                        .withOutput ("Output", juce::AudioChannelSet::mono(), true)),
@@ -79,81 +61,104 @@ void BDropProcessor::applyRange (int r)
 void BDropProcessor::prepareToPlay (double sampleRate, int)
 {
     fs = sampleRate;
-    std::fill (buf.begin(), buf.end(), 0.0f);
-    w = 0;
-    grain = (float) juce::jlimit (64.0, (double) kBuf / 3.0, 0.014 * fs);
-    // l'aggancio deve poter spostare la testina di un periodo intero della nota più bassa (~75 Hz)
-    search = juce::jlimit (32, 2048, (int) std::round (640.0 * fs / 48000.0));
-    dMin = 4.0f;
-    heads[0] = { dMin, 0.0f };
-    heads[1] = { dMin + 0.5f * grain, 0.0f };
+    order = fs > 66000.0 ? 11 : 10;   // 1024 punti a 44,1/48 kHz, 2048 a 88,2/96 kHz: la stessa durata
+    N = 1 << order; H = N / 4;
+    fft = std::make_unique<juce::dsp::FFT> (order);
+    win.resize ((size_t) N);
+    for (int i = 0; i < N; ++i) win[(size_t) i] = 0.5f - 0.5f * (float) std::cos (juce::MathConstants<double>::twoPi * i / N);
+    double ws = 0; for (int i = 0; i < N; ++i) ws += (double) win[(size_t) i] * win[(size_t) i];
+    olaScale = (float) ((double) H / ws);   // analisi e sintesi con Hann, sovrapposizione 4x: somma costante
+    inRing.assign ((size_t) (4 * N), 0.0f);
+    frame.assign ((size_t) (2 * N), 0.0f);
+    outAcc.assign ((size_t) N, 0.0f);
+    fifo.assign ((size_t) kFifo, 0.0f);
+    const size_t bins = (size_t) (N / 2 + 1);
+    prevPhase.assign (bins, 0.0f); synthPhase.assign (bins, 0.0f);
+    mag.assign (bins, 0.0f); phase.assign (bins, 0.0f); omega.assign (bins, 0.0f); peaks.assign (bins, 0);
+    inCount = 0; lastStart = -1; fifoW = 0; anaPos = 0.0; readPos = 0.0; reading = false;
+    resetPending = true;
+    preHp.set (fs, 52.0, 0.70710678); preHp.reset();
+    setLatencySamples (0);   // la nota trasposta arriva dopo un frame; l'asciutto e il plettro restano a latenza zero
+
     ratioSm = std::exp2 ((pSemi->load() + pFine->load() / 100.0f) / 12.0f);
     glide = (pSemi->load() + pFine->load() / 100.0f);
     idSm = std::abs (glide) < 0.005f ? 1.0f : 0.0f;
     onGain = pOn->load() > 0.5f ? 1.0f : 0.0f;
     onCoef = 1.0f - sp::coefMs (10.0 / 3.0, fs);
     mixSm = pMix->load() / 100.0f;
-    pickHp1.set (fs, 3500.0); pickHp2.set (fs, 3500.0); pickHp1.reset(); pickHp2.reset();
+    pickHp1.set (fs, 2800.0); pickHp2.set (fs, 2800.0); pickHp1.reset(); pickHp2.reset();
     fAtk = sp::coefMs (0.1, fs); fRel = sp::coefMs (6.0, fs);
     sAtk = sp::coefMs (6.0, fs); sRel = sp::coefMs (60.0, fs);
-    eFast = eSlow = 0; pickLeft = 0; pickGain = 0;
-    pickLen = (int) std::round (0.004 * fs);
-    pickHold = 0;
-    tHp.reset(); tMud.reset(); tAir.reset(); lastT = -1.0f;
+    eFast = eSlow = tFast = tSlow = 0; pickLeft = 0; pickGain = 0; pickHold = onsetHold = 0;
+    pickLen = (int) std::round (0.005 * fs);
+    tMud.reset(); tAir.reset(); lastT = -1.0f;
 }
 
-float BDropProcessor::readAt (float delay) const noexcept
+// Un frame del phase vocoder (allungamento del tempo): gli N campioni d'ingresso da start -> spettro -> fasi di sintesi
+// (picchi che avanzano di H × la loro frequenza, regioni bloccate al loro picco) -> antitrasformata, finestra, somma
+// sovrapposta. Ogni frame aggiunge H campioni allo stream allungato (fifo), che il ricampionatore legge.
+void BDropProcessor::processFrame (juce::int64 start, int hopIn) noexcept
 {
-    // Hermite a 4 punti attorno alla posizione (w - delay)
-    const float pos = (float) w - delay;
-    const float fl = std::floor (pos);
-    const int i = (int) fl;
-    const float f = pos - fl;
-    const float y0 = buf[(size_t) ((i - 1) & (kBuf - 1))], y1 = buf[(size_t) (i & (kBuf - 1))];
-    const float y2 = buf[(size_t) ((i + 1) & (kBuf - 1))], y3 = buf[(size_t) ((i + 2) & (kBuf - 1))];
-    const float c1 = 0.5f * (y2 - y0), c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3, c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-    return ((c3 * f + c2) * f + c1) * f + y1;
-}
+    const int half = N / 2, ringMask = 4 * N - 1;
+    for (int i = 0; i < N; ++i) frame[(size_t) i] = inRing[(size_t) ((start + i) & ringMask)] * win[(size_t) i];
+    std::fill (frame.begin() + N, frame.end(), 0.0f);
+    fft->performRealOnlyForwardTransform (frame.data(), true);
 
-// Aggancio di fase: tra i ritardi baseDelay + o (o = 0...search, passo 2: fino a un periodo della nota più bassa)
-// sceglie quello la cui forma d'onda recente somiglia di più a quella letta dall'altra testina (correlazione
-// normalizzata su 256 campioni presi a passo 2, poi vertice della parabola per la frazione di campione). A parità quasi esatta vince il ritardo più corto: meno latenza sulle note acute.
-float BDropProcessor::findSplice (float baseDelay, float otherDelay) noexcept
-{
-    constexpr int M = 256;
-    const int dB = (int) std::round (otherDelay);
-    double eB = 0;
-    for (int j = 0; j < M; j += 2) { const float b = buf[(size_t) ((w - dB - j) & (kBuf - 1))]; eB += (double) b * b; }
-    if (eB < 1.0e-12) { lockQuality.store (0.0f, std::memory_order_relaxed); return 0.0f; }
-    const int nC = search / 2 + 1;
-    double bestC = -2.0;
-    for (int k = 0; k < nC; ++k)
+    // analisi: modulo, fase e frequenza istantanea (radianti per campione) di ogni bin, sul salto d'analisi vero
+    const float twoPi = juce::MathConstants<float>::twoPi;
+    float peakE = 0.0f, allE = 0.0f;
+    for (int k = 0; k <= half; ++k)
     {
-        const int dA = (int) std::round (baseDelay) + 2 * k;
-        double ab = 0, eA = 0;
-        for (int j = 0; j < M; j += 2)
-        {
-            const float a = buf[(size_t) ((w - dA - j) & (kBuf - 1))], b = buf[(size_t) ((w - dB - j) & (kBuf - 1))];
-            ab += (double) a * b; eA += (double) a * a;
-        }
-        corr[(size_t) k] = (float) (ab / std::sqrt (eA * eB + 1.0e-20));
-        bestC = juce::jmax (bestC, (double) corr[(size_t) k]);
+        const float re = frame[(size_t) (2 * k)], im = frame[(size_t) (2 * k + 1)];
+        mag[(size_t) k] = std::sqrt (re * re + im * im);
+        phase[(size_t) k] = std::atan2 (im, re);
+        const float expected = twoPi * (float) k * (float) hopIn / (float) N;
+        float dev = phase[(size_t) k] - prevPhase[(size_t) k] - expected;
+        dev -= twoPi * std::round (dev / twoPi);   // srotolato in (-pi, pi]
+        omega[(size_t) k] = (expected + dev) / (float) juce::jmax (1, hopIn);
+        prevPhase[(size_t) k] = phase[(size_t) k];
+        allE += mag[(size_t) k] * mag[(size_t) k];
     }
-    float best = 0.0f;
-    for (int k = 0; k < nC; ++k)
-        if (corr[(size_t) k] >= bestC - 0.02)
+
+    // picchi locali
+    int nPeaks = 0;
+    for (int k = 1; k < half; ++k)
+        if (mag[(size_t) k] > mag[(size_t) (k - 1)] && mag[(size_t) k] >= mag[(size_t) (k + 1)] && mag[(size_t) k] > 1.0e-7f)
+            peaks[(size_t) nPeaks++] = k;
+
+    // sintesi: ogni picco avanza di H × la sua frequenza; i bin della sua regione tengono la fase relativa d'ingresso.
+    // A una nuova plettrata (o alla prima volta) le fasi di sintesi ripartono da quelle d'ingresso.
+    const bool reset = resetPending || lastStart < 0;
+    resetPending = false;
+    std::fill (frame.begin(), frame.end(), 0.0f);
+    for (int r = 0; r < nPeaks; ++r)
+    {
+        const int p = peaks[(size_t) r];
+        const int lo = r == 0 ? 0 : (peaks[(size_t) (r - 1)] + p) / 2 + 1;
+        const int hi = r == nPeaks - 1 ? half : (p + peaks[(size_t) (r + 1)]) / 2;
+        const float sp = reset ? phase[(size_t) p] : synthPhase[(size_t) p] + (float) H * omega[(size_t) p];
+        if (mag[(size_t) p] > 0.0f) peakE += mag[(size_t) p] * mag[(size_t) p];
+        for (int b = lo; b <= hi; ++b)
         {
-            while (k + 1 < nC && corr[(size_t) k + 1] >= corr[(size_t) k]) ++k;   // sale fino al massimo locale
-            best = 2.0f * (float) k;
-            if (k > 0 && k + 1 < nC)   // vertice della parabola tra i tre punti: aggancio al campione frazionario
-            {
-                const float c0 = corr[(size_t) k - 1], c1 = corr[(size_t) k], c2 = corr[(size_t) k + 1], den = c0 - 2.0f * c1 + c2;
-                if (den < -1.0e-9f) best += 2.0f * juce::jlimit (-0.5f, 0.5f, 0.5f * (c0 - c2) / den);
-            }
-            break;
+            const float ph = sp + phase[(size_t) b] - phase[(size_t) p];
+            synthPhase[(size_t) b] = std::remainder (ph, twoPi);
+            frame[(size_t) (2 * b)] = mag[(size_t) b] * std::cos (ph);
+            frame[(size_t) (2 * b + 1)] = mag[(size_t) b] * std::sin (ph);
         }
-    lockQuality.store ((float) juce::jmax (0.0, bestC), std::memory_order_relaxed);
-    return best;
+    }
+    if (nPeaks == 0) for (int k = 0; k <= half; ++k) synthPhase[(size_t) k] = phase[(size_t) k];
+    frame[1] = 0.0f;                          // DC e Nyquist reali
+    frame[(size_t) (2 * half + 1)] = 0.0f;
+    fft->performRealOnlyInverseTransform (frame.data());
+
+    // somma sovrapposta (salto di sintesi H): i primi H campioni sono pronti e vanno nello stream allungato
+    for (int i = 0; i < N; ++i) outAcc[(size_t) i] += frame[(size_t) i] * win[(size_t) i] * olaScale;
+    for (int i = 0; i < H; ++i) fifo[(size_t) ((fifoW + i) & (kFifo - 1))] = outAcc[(size_t) i];
+    fifoW += H;
+    std::copy (outAcc.begin() + H, outAcc.end(), outAcc.begin());
+    std::fill (outAcc.end() - H, outAcc.end(), 0.0f);
+    lastStart = start;
+    lockQuality.store (allE > 1.0e-12f ? juce::jlimit (0.0f, 1.0f, 4.0f * peakE / allE) : 0.0f, std::memory_order_relaxed);
 }
 
 void BDropProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -175,83 +180,92 @@ void BDropProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const float t = semis < 0.0f ? (pTension->load() / 100.0f) * juce::jmin (1.0f, -semis / 12.0f) : 0.0f;
     if (std::abs (t - lastT) > 1.0e-4f)
     {
-        tHpOn = t > 0.001f;
-        tHp.set (fs, 45.0 + 50.0 * t, 0.7071);
-        tMud.set (fs, 165.0, 1.4);
-        tAir.set (fs, 3000.0, 0.7071);
-        mudG = sp::dbToGain (-6.0f * t);
-        airG = sp::dbToGain (3.0f * t) - 1.0f;
+        tOn = t > 0.001f;
+        tMud.set (fs, 160.0, 1.2);
+        tAir.set (fs, 3200.0, 0.7071);
+        mudG = sp::dbToGain (-4.5f * t);
+        airG = sp::dbToGain (2.0f * t) - 1.0f;
         lastT = t;
     }
 
-    // spento e già sfumato: l'uscita è l'ingresso, identica (la linea continua a riempirsi)
+    int sp0 = scopePos.load (std::memory_order_relaxed);
+    // spento e già sfumato: l'uscita è l'ingresso, identica (lo shifter continua a riempirsi)
     if (onTarget < 0.5f && onGain < 1.0e-5f)
     {
         onGain = 0.0f;
-        int sp0 = scopePos.load (std::memory_order_relaxed);
         for (int i = 0; i < n; ++i)
         {
-            buf[(size_t) w] = io[i]; w = (w + 1) & (kBuf - 1);
+            inRing[(size_t) (inCount & (4 * N - 1))] = preHp.processHP (io[i]); ++inCount;
             sp0 = (sp0 + 1) & (kScope - 1); scopeIn[(size_t) sp0] = io[i]; scopeOut[(size_t) sp0] = io[i];
         }
+        // al riaccendersi lo shifter riparte pulito: analisi dal punto attuale, fasi d'ingresso
+        resetPending = true; anaPos = (double) inCount; lastStart = -1; reading = false;
+        std::fill (outAcc.begin(), outAcc.end(), 0.0f);
         scopePos.store (sp0, std::memory_order_release);
         for (int c = 1; c < outCh; ++c) buffer.copyFrom (c, 0, buffer, 0, 0, n);
         return;
     }
 
-    const auto& win = hann();
-    int sp0 = scopePos.load (std::memory_order_relaxed);
     bool flash = false;
     for (int i = 0; i < n; ++i)
     {
         const float x = io[i];
-        buf[(size_t) w] = x;
-
         glide += glideCoef * (semis - glide);
         ratioSm = std::exp2 (glide / 12.0f);
         mixSm += 0.002f * (mixTarget - mixSm);
         onGain += onCoef * (onTarget - onGain);
-        // a 0 semitoni il plugin passa l'ingresso identico (senza il ritardo delle testine), con 10 ms di dissolvenza
+        // a 0 semitoni il plugin passa l'ingresso identico (senza il frame di ritardo), con 10 ms di dissolvenza
         const float idTarget = std::abs (semis) < 0.005f ? 1.0f : 0.0f;
         idSm += onCoef * (idTarget - idSm);
         if (std::abs (idSm - idTarget) < 1.0e-5f) idSm = idTarget;
 
-        // 1-2. due testine sul grano, con aggancio di fase quando una ricomincia
-        float wet;
-        if (std::abs (ratioSm - 1.0f) < 1.0e-5f) wet = readAt (dMin + 0.5f * grain);   // nessuna trasposizione: stesso ritardo
-        else
+        // transiente sulla DI (inviluppo veloce che supera di molto quello lento): al prossimo frame, phase reset
         {
-            const float step = 1.0f - ratioSm;
-            wet = 0.0f;
-            for (int h = 0; h < 2; ++h)
-            {
-                auto& hd = heads[(size_t) h];
-                hd.d += step;
-                float p = (hd.d - hd.off - dMin) / grain;
-                if (p >= 1.0f || p < 0.0f)
-                {
-                    hd.d += p >= 1.0f ? -grain : grain;
-                    const auto& other = heads[(size_t) (1 - h)];
-                    const float base = hd.d - hd.off;
-                    const float o = findSplice (base, other.d);
-                    hd.d = base + o; hd.off = o;
-                    p = (hd.d - hd.off - dMin) / grain;
-                }
-                wet += win (p) * readAt (hd.d);
-            }
+            const float a = std::abs (x);
+            tFast = a > tFast ? fAtk * (tFast - a) + a : fRel * (tFast - a) + a;
+            tSlow = a > tSlow ? sAtk * (tSlow - a) + a : sRel * (tSlow - a) + a;
+            if (onsetHold > 0) --onsetHold;
+            else if (tFast > 2.0f * tSlow + 1.0e-3f) { resetPending = true; onsetHold = (int) (0.03 * fs); }
         }
 
-        // 4. tension sul segnale trasposto
-        if (tHpOn)
+        // phase vocoder: l'ingresso filtrato entra nell'anello; quando c'è un frame intero dalla prossima posizione
+        // d'analisi (che avanza di H / rapporto) lo si elabora
+        inRing[(size_t) (inCount & (4 * N - 1))] = preHp.processHP (x);
+        ++inCount;
+        const juce::int64 start = (juce::int64) anaPos;
+        if (inCount >= start + N)
         {
-            wet = tHp.processHP (wet);
+            processFrame (start, lastStart < 0 ? H : (int) (start - lastStart));
+            anaPos += (double) H / (double) ratioSm;
+            if (! reading) { readPos = (double) (fifoW - H) - 2.0; reading = true; }   // la lettura parte un salto indietro
+        }
+        // ricampionatore: legge lo stream allungato alla velocità del rapporto (Hermite). Il livello della fifo resta
+        // attorno a mezzo salto: una correzione minima della velocità compensa gli arrotondamenti dei salti d'analisi.
+        float wet = 0.0f;
+        if (reading)
+        {
+            const double level = (double) fifoW - readPos;
+            const double rate = (double) ratioSm * (1.0 + 0.0005 * (level - 0.5 * H - 4.0) / (double) H);
+            const double pos = juce::jmin (readPos, (double) fifoW - 3.0);
+            const juce::int64 i1 = (juce::int64) std::floor (pos);
+            const float f = (float) (pos - (double) i1);
+            auto at = [this] (juce::int64 k) { return fifo[(size_t) (k & (kFifo - 1))]; };
+            const float y0 = at (i1 - 1), y1 = at (i1), y2 = at (i1 + 1), y3 = at (i1 + 2);
+            const float c1 = 0.5f * (y2 - y0), c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3, c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+            wet = ((c3 * f + c2) * f + c1) * f + y1;
+            readPos = pos + rate;
+        }
+
+        // tension sul segnale trasposto
+        if (tOn)
+        {
             tMud.tick (wet); wet += (mudG - 1.0f) * tMud.k * tMud.bp;
             wet += airG * tAir.processHP (wet);
         }
 
         float y = (1.0f - mixSm) * x + mixSm * wet;
 
-        // 3. zero-lag pick: il clic del plettro (sopra 3,5 kHz) passa subito, per 4 ms, mentre la nota trasposta arriva
+        // zero-lag pick: la parte sopra 2,8 kHz della DI passa subito, per 5 ms, a ogni nuova plettrata
         const float hf = pickHp2.processHP (pickHp1.processHP (x));
         const float a = std::abs (hf);
         eFast = a > eFast ? fAtk * (eFast - a) + a : fRel * (eFast - a) + a;
@@ -265,12 +279,11 @@ void BDropProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
         const float out = x + onGain * (1.0f - idSm) * (y - x);
         io[i] = out;
-        w = (w + 1) & (kBuf - 1);
         sp0 = (sp0 + 1) & (kScope - 1); scopeIn[(size_t) sp0] = x; scopeOut[(size_t) sp0] = out;
     }
     scopePos.store (sp0, std::memory_order_release);
     if (flash) pickFlash.store (true, std::memory_order_relaxed);
-    pickHp1.flush(); pickHp2.flush(); tHp.flush(); tMud.flush(); tAir.flush();
+    pickHp1.flush(); pickHp2.flush(); preHp.flush(); tMud.flush(); tAir.flush();
     for (int c = 1; c < outCh; ++c) buffer.copyFrom (c, 0, buffer, 0, 0, n);
 }
 

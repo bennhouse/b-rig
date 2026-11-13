@@ -20,9 +20,9 @@ The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where yo
 ## The app
 
 - **The chain:** drag modules from the library into the chain and reorder them. Each module is one of the plugins below, with the same sound and interface, at most once in the chain. It starts empty.
-- **Split:** divide the chain into two parallel lanes with different modules (two amps, a delay on one side and a reverb on the other), from any point, without making the chain bar any wider. The lanes play left and right (`stereo`), and `widen` delays one of them by the time that measures best for a wide sound that still holds up in mono.
+- **Split:** divide the chain into two parallel lanes with different modules (two amps, a delay on one side and a reverb on the other), from any point, without making the chain bar any wider. The lanes play left and right (`stereo`, with a measured delay on one side that keeps the mono sum full) or summed (`mono`), and `balance` lines up their phase and evens out their volume.
 - **Safe by design:** b-amp stays muted until there is a cab after it, so a raw amp never blasts into your headphones, and a limiter protects the output.
-- **Tuner, metronome, presets** with colours, rename, import and export, **undo / redo** for every change, and audio settings kept between sessions. Presets live outside the app, so updates never touch them.
+- **Tuner, metronome** (volume and pitch), **presets** with colours, rename, import and export, `save` and `new` in the top bar, **undo / redo** for every change, and audio settings kept between sessions. The app reopens where you left it, unsaved changes included. Presets live outside the app, so updates never touch them.
 - **Updates:** once a day b-rig and the plugins check for a new release; a small notice in the corner opens the download. The about panel (click the name) also has `check for updates`.
 
 More in [b-rig/README.md](b-rig/README.md).
@@ -33,14 +33,14 @@ The effects of the chain. 16 of them are modules of the app; b-double, b-scenery
 
 ### Before the amp
 
-- **b-drop**: tunes the guitar down or up while you play, from -12 to +12 semitones. The pick attack goes through right away; the shifted note follows a few milliseconds later, so it still feels like playing.
+- **b-drop**: tunes the guitar down or up while you play, from -12 to +12 semitones, chords included: it never guesses the note, so the tuning stays stable. The pick attack goes through right away; the shifted note follows about 22 ms later.
 - **b-focus**: removes hiss and hum from the DI between notes and leaves the notes alone. `learn` listens to your noise for a few seconds and sets itself.
 - **b-fs** (b-freshstrings): the sound of new strings, a different pick and another pickup position.
-- **b-tight**: tightens the low end before the amp. Pick your tuning and it sets the low cut, keeps palm mutes tight and sharpens the attack. With no tuning chosen it stays out of the way.
+- **b-comp**: a compressor tuned for guitar, with clean, opto, fet and squash styles and a three-band mode set up for guitar. The graph shows the curve and the gain reduction as you play.
 
 ### Amp, cab and effects
 
-- **b-amp**: an amp head with three channels: clean, crunch and a lead that goes all the way to djent. Each head keeps all its own settings. Noise gate, boost with tone, and tuner built in. Click the pilot light to look at the back.
+- **b-amp**: an amp head with three channels: clean, crunch and a lead that goes all the way to djent. Each head keeps all its own settings. Noise gate that leaves long low notes alone, boost with tone, and tuner built in. Click the pilot light to look at the back.
 - **b-distort**: five distortions (tube, drive, rat, fuzz, fold) matched in loudness, so you compare the sound, not the volume.
 - **b-wire**: follows your notes and plays them back as a raw synth one or two octaves down.
 - **b-starve**: a circuit running out of power, then three glitch effects: freezes, bit errors and a melting filter.
@@ -69,7 +69,7 @@ Each plugin folder has its own `README.md` with every control and the numbers me
 ### Suggested order in a DAW
 
 ```text
-DI → b-drop → b-focus → b-fs → b-tight → (b-wire / b-starve / b-distort)
+DI → b-drop → b-focus → b-fs → b-comp → (b-wire / b-starve / b-distort)
    → b-amp → b-blend → b-double → b-aftercab → b-dynaverb
    → b-delay / b-verb → b-space → b-scenery
 ```
@@ -90,7 +90,7 @@ That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`) and every p
 ## Make it yours
 
 - **Change a plugin:** edit its `Source/`, rebuild, run its test program.
-- **Make a new plugin:** copy a small one (b-tight, b-verb) and rename it. `shared/smp` has the design system: title, frame, value boxes, about panel, common filters.
+- **Make a new plugin:** copy a small one (b-adapt, b-comp) and rename it. `shared/smp` has the design system: title, frame, value boxes, about panel, common filters.
 - **Put it in b-rig:** add `b-rig/Source/Modules/Mod_<name>.cpp` like the others and an entry in `Modules.cpp`. b-rig builds every module from the plugin's own sources, so a plugin change reaches the app at the next build.
 - **Contribute back:** issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) explains how. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 

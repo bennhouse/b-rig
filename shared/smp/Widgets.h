@@ -239,7 +239,8 @@ public:
     void add (const juce::String& rowLabel, juce::Component& c, int width);
     int getIdealWidth() const;
     int getIdealHeight() const;
-    bool isOn() const { return onParam == nullptr || onParam->getValue() > 0.5f; }
+    bool isOn() const { return onParam != nullptr ? onParam->getValue() > 0.5f : (! isActive || isActive()); }
+    std::function<bool()> isActive;   // facoltativo, senza on/off: il gruppo vale solo in certi casi (es. uno stile)
     void refresh();   // dal timer dell'editor: abilita / disabilita le righe quando cambia l'on/off
     void paint (juce::Graphics&) override;
     void resized() override;

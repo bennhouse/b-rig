@@ -41,7 +41,7 @@ set(BFRESHSTRINGS_SOURCES
 
 target_sources(BFreshstrings PRIVATE ${BFRESHSTRINGS_SOURCES})
 target_include_directories(BFreshstrings PRIVATE Source ../shared)
-target_compile_definitions(BFreshstrings PRIVATE SMP_ACCENT_ARGB=0xfffb923c)   
+target_compile_definitions(BFreshstrings PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_FRESHSTRINGS)   
 target_compile_definitions(BFreshstrings PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BFreshstrings
     PRIVATE BFreshstringsAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BFreshstrings
 juce_add_console_app(BFreshstringsTests PRODUCT_NAME "BFreshstringsTests")
 target_sources(BFreshstringsTests PRIVATE Tests/Tests.cpp ${BFRESHSTRINGS_SOURCES})
 target_include_directories(BFreshstringsTests PRIVATE Source ../shared)
-target_compile_definitions(BFreshstringsTests PRIVATE SMP_ACCENT_ARGB=0xfffb923c JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BFreshstringsTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_FRESHSTRINGS JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BFreshstringsTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BFreshstringsTests PRIVATE BFreshstringsAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

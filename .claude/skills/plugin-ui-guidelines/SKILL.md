@@ -20,7 +20,7 @@ di design può proporre di affinarle, mai di contraddirle senza chiedere.
   - un valore con unità dentro un grafico (`380 ms`, `8 kHz 1.73 s`) non è un'etichetta: `ui::drawValueTag` (Plex Mono, mai in maiuscolo, così `Hz` / `kHz` / `ms` restano scritti giusti);
   - istruzioni e suggerimenti nei grafici ("drag or scroll") in testo normale `info` #808080, mai in maiuscolo né nel grigio dei controlli spenti (contrasto AA);
   - un testo o un meter sopra un grafico ha un fondo pieno `background`, così curve e spettri non lo attraversano;
-  - quando un plugin è spento o non fa nulla (es. b-tight senza tuning) lo dice nel grafico, in `info`.
+  - quando un plugin è spento o non fa nulla (es. b-drop a 0 semitoni) lo dice nel grafico, in `info`.
   - bottoni con numeri (`tap 128`, conto alla rovescia di `learn`): Plex Mono.
 - Numeri con il **punto decimale** (`-12.0`, `1.00`) e unità standard (`dB`, `kHz`, `Hz`).
 - Il testo non cambia dimensione quando si ridimensionano i controlli.
@@ -28,16 +28,17 @@ di design può proporre di affinarle, mai di contraddirle senza chiedere.
 ## Colori
 | Ruolo | Valore |
 |---|---|
-| Sfondo | `#121212` |
+| Sfondo (finestre, riquadri, b-rig) | `#0D0D0F` |
 | Testo principale (nomi delle funzioni, valori) | `#A3A3A3` |
 | Testi informativi (dB, Hz, stato) — un filo più scuri | `#808080` |
 | Testi / funzioni disattivate, riquadro principale | `#525252` |
 | Griglia interna (molto scura) | `#1F1F1F`, linea dello zero `#303030` |
-| Accento b-aftercab (funzioni attive, checkbox) | `#FFA200` |
-| Accento b-distort | rosso `#FF4D4D` (leggibile su `#121212`) |
-| Accento b-focus | blu elettrico `#3D8BFF` |
+| Accento b-aftercab (funzioni attive, checkbox) | `#EAB308` |
+| Accento b-distort | rosso `#EF4444` |
+| Accento b-focus | blu `#3B82F6` |
 - Gerarchia: nomi interattivi più chiari, testi informativi più scuri.
 - Su un elemento pieno di accento il testo diventa scurissimo (`#121212`).
+- Dentro b-rig il modulo aperto non ha contorno: sta sullo stesso sfondo dell'app.
 
 ## Componenti
 - **Checkbox**: spenta = solo bordo 1 px, sfondo trasparente; accesa = quadrato pieno di accento.
@@ -51,7 +52,8 @@ di design può proporre di affinarle, mai di contraddirle senza chiedere.
     Vale anche per testi non in un ValueBox (tasti con conto alla rovescia, valori dei meter): larghezza calcolata sulla stringa più lunga (es. "tap 300", "-36.0 dB").
   - **Barra di riempimento** (tutti i plugin, attuali e futuri): dentro ogni controllo numerico scorrevole, sempre visibile, da sinistra (minimo) a destra (massimo) sulla scala normalizzata del parametro. Colore `valueFill` #2C2C2C (poco più chiaro dello sfondo ma ben visibile), `valueFillOff` #1C1C1C da disattivato. Nei controlli verticali (es. OUT) si riempie dal basso.
   - **Doppio clic** sul numero: torna al default (quello del preset, se c'è) **e** apre la modifica a tastiera con il numero tutto selezionato, evidenziato in `editHighlight` #C8C8C8 (chiaro neutro, mai il blu di sistema) con testo scuro. Se non si scrive nulla, Invio o clic fuori lasciano il default; Esc annulla. Accetta virgola o punto e "k" per le migliaia.
-- **Plugin nuovi semplici** (b-tight, b-adapt, b-double): struttura comune `smp/Shell.h` (titolo, selettore in alto a destra, riquadro con riga controlli e grafico), filtri comuni in `smp/Filters.h`. Accenti: b-tight #84CC16, b-adapt #DE50C9 (avviso audition #10B981), b-double #22D3EE, b-blend #14B8A6, b-wire #6366F1, b-starve #FB7185, b-scenery #F1F5F9, b-meter #38BDF8. Test comuni in `smp/TestKit.h` (snapshot + larghezze fisse; chiamare `editorBeingDeleted` prima di distruggere un editor nei test). Nei selettori a segmenti i segmenti hanno larghezza uguale: etichette brevi.
+- **Plugin nuovi semplici** (b-adapt, b-double): struttura comune `smp/Shell.h` (titolo, selettore in alto a destra, riquadro con riga controlli e grafico), filtri comuni in `smp/Filters.h`. Plugin con valori grandi e gruppi (b-verb, b-delay, b-comp): `BigValue`, `Section`, `TextToggle` e la misura `kRoomy`.
+- **Colori di accento**: tutti in `shared/smp/Palette.h` (un solo posto; i CMakeLists usano `SMP_ACCENT_ARGB=BSUITE_ACCENT_...`, i moduli di b-rig e la sua libreria le stesse macro), per ruolo: PRE/DI freddi (b-focus #3B82F6, b-drop #8B5CF6, b-comp #84CC16, b-fs #F59E0B), CORE/AMP caldi (b-amp #E11D48, b-distort #EF4444, b-starve #FB7185, b-wire #6366F1, b-blend #14B8A6), POST/SPACE aria e acqua (b-aftercab #EAB308, b-delay #60A5FA, b-dynaverb #06B6D4, b-verb #22D3EE, b-space #A78BFA), MASTER/UTIL neon (b-meter #38BDF8, b-adapt #D946EF; avviso audition #10B981). Solo plugin: b-double #22D3EE, b-scenery #F1F5F9, b-synthesia #E2E8F0. Test comuni in `smp/TestKit.h` (snapshot + larghezze fisse; chiamare `editorBeingDeleted` prima di distruggere un editor nei test). Nei selettori a segmenti i segmenti hanno larghezza uguale: etichette brevi.
 - **Memoria per preset** (solo sessione, `smp/PresetMemory.h`): ogni preset (tipo di compressione, timbro, tipo di distorsione…) ricorda i valori modificati finché il plugin resta caricato; doppio clic sul preset = suoi default. Non si salva col progetto.
 - **Checkbox del compressore = meter**: accesa = solo bordo di accento; l'interno si riempie dall'alto in proporzione alla gain reduction (pieno = 12 dB), in tempo reale.
 - **Pulsante smart phase**: quadrato di accento, stessa misura della checkbox, con `=` ritagliato.

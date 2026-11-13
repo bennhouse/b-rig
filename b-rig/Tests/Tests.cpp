@@ -75,11 +75,12 @@ int main()
         check (e.slot (1).processedBlocks.load() == 0, "b-amp spento: processBlock saltato", e.slot (1).processedBlocks.load());
         check (e.slot (2).processedBlocks.load() > 0 && e.slot (3).processedBlocks.load() > 0, "blend e aftercab accesi: processati");
 
-        // b-amp aggiunto dalla libreria: parte SEMPRE spento; posizione logica
+        // b-amp aggiunto con un b-blend dopo di sé: si arma subito (b-blend senza IR blocca l'uscita da solo)
         auto* amp2 = e.addModule ("amp");
-        check (amp2 != nullptr && ! amp2->enabled.load(), "b-amp aggiunto dalla libreria: safe muted");
-        auto* tight = e.addModule ("tight");
-        check (tight != nullptr && tight->enabled.load() && e.indexOf (tight) == indexOfId (e, "amp") - 1, "b-tight entra prima di b-amp (posizione logica)", e.indexOf (tight));
+        check (amp2 != nullptr && amp2->enabled.load() && ! amp2->safeMuted.load(), "b-amp aggiunto con b-blend dopo: acceso");
+        { rig::RigEngine q; auto* lone = q.addModule ("amp"); check (lone != nullptr && ! lone->enabled.load() && lone->safeMuted.load(), "b-amp senza b-blend dopo: safe muted"); }
+        auto* tight = e.addModule ("comp");
+        check (tight != nullptr && tight->enabled.load() && e.indexOf (tight) == indexOfId (e, "amp") - 1, "b-comp entra prima di b-amp (posizione logica)", e.indexOf (tight));
         auto* meter = e.addModule ("meter");
         check (e.indexOf (meter) == e.numSlots() - 1, "b-meter entra in fondo", e.indexOf (meter));
         e.moveSlot (e.indexOf (meter), -1);
@@ -244,7 +245,7 @@ int main()
         f.prepare (sr, kBlock);
         f.loadRig (tree);
         check (f.numSlots() == 5 && f.slot (3).info->id == "aftercab" && f.slot (4).info->id == "meter", "preset del rig: stessa catena", f.numSlots());
-        check (! f.slot (1).enabled.load(), "preset del rig: b-amp torna safe muted");
+        check (f.slot (1).enabled.load(), "preset del rig: b-amp acceso con b-blend dopo (anche senza IR)");
         check (f.slot (2).enabled.load() && f.slot (4).enabled.load(), "preset del rig: gli altri ricordano lo stato");
 
         // con un b-blend dopo l'ampli che ha un IR caricato, b-amp riparte già acceso dal preset
@@ -351,7 +352,7 @@ int main()
         ui.select (&e.slot (2));
         pump (300);
         savePng (ui, "gui_brig_blend.png");
-        ui.addFromLibrary ("tight");
+        ui.addFromLibrary ("comp");
         ui.addFromLibrary ("focus");
         ui.addFromLibrary ("meter");
         check (e.numSlots() == 7, "aggiunta dalla libreria", e.numSlots());
@@ -381,6 +382,7 @@ int main()
             e.resetDefault();
             ui.clearDirty();
             check (! ui.dirty, "preset appena caricato: niente save");
+            check (! ui.saveEnabledForTest(), "preset non modificato: save e new spenti");
             juce::Thread::sleep (900);   // passato il tempo in cui il caricamento non conta come modifica
             ui.paramTouchedForTest();
             check (ui.dirty, "un parametro cambiato dall'utente: stato unsaved");
@@ -482,7 +484,7 @@ int main()
             const int ia = indexOfId (e, "amp"), ib = indexOfId (e, "blend");
             ui.checkCabs();
             const bool lockedEmpty = rig::RigComponent::cabProtects (e, ib);
-            check (! e.slot (ia).enabled.load() && lockedEmpty, "b-blend senza IR dopo l'ampli: bloccato acceso, b-amp muto");
+            check (e.slot (ia).enabled.load() && lockedEmpty, "b-blend senza IR dopo l'ampli: bloccato acceso, b-amp armato");
             rigBlendLoadTestIr (*e.slot (ib).proc);
             ui.checkCabs();
             check (e.slot (ia).enabled.load(), "IR caricato in b-blend: b-amp si riattiva da solo");
@@ -515,7 +517,7 @@ int main()
             ui.tickForTest();
             ui.loadPreset ("clean slate");
             for (int k = 0; k < 3; ++k) { ui.tickForTest(); e.collectGarbage(); pump (20); }
-            ui.addFromLibrary ("tight");
+            ui.addFromLibrary ("comp");
             ui.addFromLibrary ("delay");
             ui.tickForTest();
             check (e.numSlots() == 2, "clean slate, poi due moduli dalla libreria: nessun crash", e.numSlots());
@@ -523,9 +525,12 @@ int main()
         // b-amp spento dall'utente: solo "off". Muto per protezione (cassa tolta): "safe muted"
         {
             ui.loadPreset ("clean slate");
-            e.addModule ("amp"); e.addModule ("blend");
+            e.addModule ("amp");
+            check (e.slot (indexOfId (e, "amp")).safeMuted.load(), "b-amp appena aggiunto, senza cassa: safe muted");
+            e.addModule ("blend");
             const int ia = indexOfId (e, "amp");
-            check (e.slot (ia).safeMuted.load(), "b-amp appena aggiunto: safe muted");
+            check (e.slot (ia).enabled.load() && ! e.slot (ia).safeMuted.load(), "b-blend messo dopo l'ampli: b-amp si arma");
+            ui.requestEnabled (ia, false);
             ui.requestEnabled (ia, true);
             check (e.slot (ia).enabled.load() && ! e.slot (ia).safeMuted.load(), "armato a mano: acceso");
             ui.requestEnabled (ia, false);
@@ -542,16 +547,16 @@ int main()
         // libreria: un modulo già nella catena ha un - che lo toglie
         {
             ui.loadPreset ("clean slate");
-            ui.addFromLibrary ("tight");
-            check (ui.inChain ("tight"), "tight nella catena");
-            ui.requestRemove (ui.viewIndexOf ("tight"));
-            check (! ui.inChain ("tight") && e.numSlots() == 0, "il - della libreria lo toglie");
+            ui.addFromLibrary ("comp");
+            check (ui.inChain ("comp"), "tight nella catena");
+            ui.requestRemove (ui.viewIndexOf ("comp"));
+            check (! ui.inChain ("comp") && e.numSlots() == 0, "il - della libreria lo toglie");
         }
         // split: due rami paralleli. Si divide dalla DI con B copia di A (il suono non cambia); il punto di split si
         // sposta; ogni ramo ha i suoi moduli (uno per tipo per ramo); wide = A a sinistra, B a destra
         {
             ui.loadPreset ("clean slate");
-            ui.addFromLibrary ("tight"); ui.addFromLibrary ("distort");
+            ui.addFromLibrary ("comp"); ui.addFromLibrary ("distort");
             ui.toggleSplit();
             check (e.isSplit() && e.laneSize (0) == 0 && e.laneSize (1) == 2 && e.laneSize (2) == 2, "split: A = la catena, B = una copia", e.laneSize (2));
             check (e.wide.load() && ! e.widen.load(), "split: stereo acceso di default, widen spento");
@@ -562,11 +567,11 @@ int main()
             ui.addFromLibrary ("verb");
             check (e.laneHas (2, "verb") && ! e.laneHas (1, "verb"), "ramo B: b-verb solo qui");
             e.moveSplit (2, 1);
-            check (e.laneSize (0) == 1 && e.slot (0).info->id == "tight" && ! e.laneHas (1, "tight") && ! e.laneHas (2, "tight"), "punto di split spostato dopo b-tight: in comune");
-            check (! e.canPlace ("tight", 1), "b-tight in comune: non può stare anche in un ramo");
+            check (e.laneSize (0) == 1 && e.slot (0).info->id == "comp" && ! e.laneHas (1, "comp") && ! e.laneHas (2, "comp"), "punto di split spostato dopo b-comp: in comune");
+            check (! e.canPlace ("comp", 1), "b-comp in comune: non può stare anche in un ramo");
             e.moveSplit (2, 0);
-            check (e.laneSize (0) == 0 && e.laneHas (1, "tight") && e.laneHas (2, "tight"), "punto di split di nuovo alla DI: b-tight in tutti e due i rami");
-            e.moveSplit (2, 1);   // b-tight in comune, poi i due rami
+            check (e.laneSize (0) == 0 && e.laneHas (1, "comp") && e.laneHas (2, "comp"), "punto di split di nuovo alla DI: b-comp in tutti e due i rami");
+            e.moveSplit (2, 1);   // b-comp in comune, poi i due rami
             pump (60);
             savePng (ui, "gui_brig_split.png");   // ramo b
             const auto saved = e.saveRig();
@@ -584,9 +589,9 @@ int main()
         // segue il ramo che si vede; un modulo nella parte comune non entra in un ramo (e viceversa)
         {
             ui.loadPreset ("clean slate");
-            ui.addFromLibrary ("tight"); ui.addFromLibrary ("distort");
+            ui.addFromLibrary ("comp"); ui.addFromLibrary ("distort");
             ui.toggleSplit();
-            e.moveSplit (1, 1);   // b-tight in comune, b-distort in tutti e due i rami
+            e.moveSplit (1, 1);   // b-comp in comune, b-distort in tutti e due i rami
             ui.showLane (1);
             ui.addFromLibrary ("delay");
             check (ui.inChain ("delay") && e.laneHas (1, "delay"), "ramo a: b-delay");
@@ -595,7 +600,7 @@ int main()
             const bool moved = ui.dragToLaneForTest (dIdx, true, 0);
             check (moved && e.laneHas (2, "delay") && ! e.laneHas (1, "delay") && ui.viewLane == 2, "shift durante il trascinamento: b-delay passa nel ramo b e la vista lo segue");
             ui.showLane (1);
-            check (! ui.inChain ("delay") && ui.inChain ("distort") && ui.inChain ("tight"), "ramo a: b-delay di nuovo libero in libreria, b-tight in comune");
+            check (! ui.inChain ("delay") && ui.inChain ("distort") && ui.inChain ("comp"), "ramo a: b-delay di nuovo libero in libreria, b-comp in comune");
             ui.showLane (2);
             check (ui.inChain ("delay"), "ramo b: b-delay già presente");
             // b-distort (in tutti e due i rami) non può andare nella parte comune
@@ -629,7 +634,7 @@ int main()
         // il suono: rami uguali = catena unica; wide = A a sinistra e B a destra; ampli prima dello split coperto
         // solo con una cassa in entrambi i rami
         {
-            auto build = [] (rig::RigEngine& x) { x.prepare (sr, kBlock); x.addModule ("tight"); x.addModule ("distort"); };
+            auto build = [] (rig::RigEngine& x) { x.prepare (sr, kBlock); x.addModule ("comp"); x.addModule ("distort"); };
             auto sig = [] (int i) { return 0.2f * (float) std::sin (tp * 110.0 * i / sr) * (float) std::exp (-(i % 24000) / 9000.0); };
             rig::RigEngine one; build (one);
             rig::RigEngine two; build (two); two.splitChain();
@@ -639,8 +644,8 @@ int main()
             two.removeSlot (two.laneStart (2) + 1);   // b-distort solo nel ramo A
             two.wide = true;
             const auto w = runEngine (two, 24000, sig);
-            rig::RigEngine onlyTight; onlyTight.prepare (sr, kBlock); onlyTight.addModule ("tight");
-            const auto t = runEngine (onlyTight, 24000, sig);
+            rig::RigEngine onlyComp; onlyComp.prepare (sr, kBlock); onlyComp.addModule ("comp");
+            const auto t = runEngine (onlyComp, 24000, sig);
             float dl = 0, dr = 0;
             for (int i = 4800; i < 24000; ++i) { dl = juce::jmax (dl, std::abs (w.getSample (0, i) - a.getSample (0, i))); dr = juce::jmax (dr, std::abs (w.getSample (1, i) - t.getSample (1, i))); }
             check (dl < 1.0e-3f && dr < 1.0e-3f, "wide: A (con b-distort) a sinistra, B (senza) a destra", juce::jmax (dl, dr));
@@ -653,7 +658,7 @@ int main()
         // widen: il ramo b in ritardo del tempo misurato. Con due rami uguali e una nota a 110 Hz il tempo migliore è un
         // multiplo del periodo (9,09 ms): sommati in mono non si cancellano
         {
-            rig::RigEngine w; w.prepare (sr, kBlock); w.addModule ("tight"); w.splitChain();
+            rig::RigEngine w; w.prepare (sr, kBlock); w.addModule ("comp"); w.splitChain();
             auto note = [] (int i) { double v = 0; for (int h = 1; h <= 6; ++h) v += std::sin (tp * 110.0 * h * i / sr) / h; return (float) (0.15 * v); };
             w.startWidenMeasure();
             int k = 0;
@@ -665,7 +670,7 @@ int main()
             auto y = runEngine (w, 48000, note, 0);
             w.wide = false;   // somma mono
             auto m = runEngine (w, 48000, note, 48000);
-            rig::RigEngine one; one.prepare (sr, kBlock); one.addModule ("tight");
+            rig::RigEngine one; one.prepare (sr, kBlock); one.addModule ("comp");
             auto ref = runEngine (one, 96000, note, 0);
             const double lm = rmsDb (m, 0, 24000, 48000), lr = rmsDb (ref, 0, 72000, 96000);
             std::printf ("       widen in mono: %.2f dB rispetto alla catena unica\n", lm - lr);
@@ -675,13 +680,52 @@ int main()
             rig::RigEngine r2; r2.loadRig (t);
             check (r2.widen.load() && std::abs (r2.widenMs.load() - ms) < 0.01f, "widen e il suo tempo si salvano nel preset");
         }
+        // save aggiorna il preset caricato (nessun preset nuovo); la sessione si riapre com'era, anche non salvata
+        {
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("brig_session_test");
+            dir.deleteRecursively(); dir.createDirectory();
+            rig::RigComponent::presetDirOverride() = dir.getChildFile ("Presets");
+            ui.loadPreset ("clean slate");
+            ui.addFromLibrary ("delay");
+            juce::Thread::sleep (900); ui.paramTouchedForTest();
+            check (ui.dirty && ui.saveEnabledForTest(), "modificato: save e new accesi");
+            ui.saveFromTopBar();   // new: "User 1"
+            ui.closeScreensForTest();
+            const auto before = rig::RigComponent::listPresets().size();
+            ui.addFromLibrary ("verb");
+            juce::Thread::sleep (900); ui.paramTouchedForTest();
+            ui.saveCurrent();
+            check (rig::RigComponent::listPresets().size() == before && ui.currentPreset == "User 1" && ! ui.dirty, "save: aggiorna User 1, nessun preset nuovo");
+            rig::RigEngine chk; rig::RigComponent::loadPresetFile (chk, rig::RigComponent::presetFile ("User 1"));
+            check (chk.numSlots() == 2, "User 1 salvato con b-verb", chk.numSlots());
+            ui.addFromLibrary ("space");
+            juce::Thread::sleep (900); ui.paramTouchedForTest();
+            ui.saveSession();
+            rig::RigEngine boot; rig::RigComponent::loadStartup (boot);
+            check (boot.numSlots() == 3 && rig::RigComponent::bootPreset() == "User 1" && rig::RigComponent::bootDirty(), "sessione: si riapre com'era (User 1, con b-space non salvato)", boot.numSlots());
+            rig::RigComponent::bootPreset() = {}; rig::RigComponent::bootDirty() = false;
+            dir.deleteRecursively();
+        }
+        // balance: due rami con livelli diversi e b in controfase si pareggiano e si allineano
+        {
+            rig::RigEngine b; b.prepare (sr, kBlock); b.addModule ("comp"); b.splitChain();
+            juce::Random rnd (4);
+            std::vector<float> nz (96000); for (auto& v : nz) v = 0.2f * (rnd.nextFloat() - 0.5f);
+            std::vector<float> a ((size_t) (0.75 * sr)), bb ((size_t) (0.75 * sr) + (size_t) (0.026 * sr));
+            const int lead = (int) (0.026 * sr), lag = 48;   // b 1 ms in ritardo, metà volume, invertito
+            for (size_t i = 0; i < bb.size(); ++i) bb[i] = -0.5f * nz[i + 1000 - (size_t) lag];
+            for (size_t i = 0; i < a.size(); ++i) a[i] = nz[i + 1000 + (size_t) lead];
+            const auto r = rig::RigEngine::measureBalance (a.data(), bb.data(), (int) a.size(), sr);
+            std::printf ("       balance: ritardo %.2f ms, a %.2f, b %.2f\n", r.alignMs, r.gainA, r.gainB);
+            check (std::abs (r.alignMs + 1.0f) < 0.05f && r.gainB < 0.0f && std::abs (std::abs (r.gainB) / r.gainA - 2.0f) < 0.05f, "balance: b arriva 1 ms dopo, invertito e più piano: a ritardato di 1 ms, b invertito, volumi pari");
+        }
         // primo avvio
         ui.showWelcome();
         pump (100);
         check (ui.welcomeVisibleForTest(), "primo avvio: la finestra sugli IR");
         savePng (ui, "gui_brig_welcome.png");
         ui.closeScreensForTest();
-        ui.showInfo ("tight");
+        ui.showInfo ("comp");
         pump (100);
         savePng (ui, "gui_brig_info.png");
         ui.setSize (1600, 1000);

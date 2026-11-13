@@ -4,7 +4,7 @@
 #include "ModulePrelude.h"
 #define SMP_IN_RIG 1   // titolo, about e tuner del plugin nascosti: in b-rig ci sono già
 #undef SMP_ACCENT_ARGB
-#define SMP_ACCENT_ARGB 0xfffb923c
+#define SMP_ACCENT_ARGB BSUITE_ACCENT_FRESHSTRINGS
 
 namespace rig_freshstrings
 {

@@ -41,7 +41,7 @@ set(BDYNAVERB_SOURCES
 
 target_sources(BDynaverb PRIVATE ${BDYNAVERB_SOURCES})
 target_include_directories(BDynaverb PRIVATE Source ../shared)
-target_compile_definitions(BDynaverb PRIVATE SMP_ACCENT_ARGB=0xfffacc15)   
+target_compile_definitions(BDynaverb PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DYNAVERB)   
 target_compile_definitions(BDynaverb PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(BDynaverb
     PRIVATE BDynaverbAssets juce::juce_audio_utils juce::juce_dsp
@@ -51,7 +51,7 @@ target_link_libraries(BDynaverb
 juce_add_console_app(BDynaverbTests PRODUCT_NAME "BDynaverbTests")
 target_sources(BDynaverbTests PRIVATE Tests/Tests.cpp ${BDYNAVERB_SOURCES})
 target_include_directories(BDynaverbTests PRIVATE Source ../shared)
-target_compile_definitions(BDynaverbTests PRIVATE SMP_ACCENT_ARGB=0xfffacc15 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_compile_definitions(BDynaverbTests PRIVATE SMP_ACCENT_ARGB=BSUITE_ACCENT_DYNAVERB JUCE_MODAL_LOOPS_PERMITTED=1)
 target_compile_definitions(BDynaverbTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(BDynaverbTests PRIVATE BDynaverbAssets juce::juce_audio_utils juce::juce_dsp
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

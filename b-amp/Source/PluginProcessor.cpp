@@ -55,7 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BAmpProcessor::createLayout(
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { BAmpIDs::channel, 1 }, "Channel", StringArray { "Clean", "Crunch", "Lead" }, 1));
     // off, 2x, 4x (i progetti salvati prima, con 0 = 2x e 1 = 4x, si rimappano in setStateInformation)
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { BAmpIDs::os, 1 }, "Oversampling", StringArray { "Off", "2x", "4x" }, 1));
-    f (BAmpIDs::gate, "Gate", { -90.0f, -20.0f, 0.5f }, -60.0f, "dB");
+    f (BAmpIDs::gate, "Gate", { -110.0f, -20.0f, 0.5f }, -60.0f, "dB");
     l.add (std::make_unique<AudioParameterBool> (ParameterID { BAmpIDs::gateOn, 1 }, "Noise gate", false));
     f (BAmpIDs::tight, "Tight", { 0.0f, 100.0f, 1.0f }, 0.0f, "%");
     f (BAmpIDs::gain, "Gain", { 0.0f, 100.0f, 1.0f }, 50.0f, "%");
@@ -219,6 +219,7 @@ void BAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     if (std::abs (tight - lastTight) > 0.002f && pendingChannel < 0) configureChannel (ch, tight);
     const bool gateOn = pGateOn->load() > 0.5f;
     const bool hum = gateOn && gateDb > -85.0f;   // il notch del ronzio fa parte del sistema anti-rumore
+    // (soglia al minimo, -110 dB: solo il gate a soglia, senza stop e senza soglia automatica)
     det.setThreshold (gateDb);
     for (int k = 0; k < kStages[curChannel]; ++k) stages[(size_t) k].drive = stageDrive (curChannel, k, gain01);
     // resonance: nel lead è più larga e più profonda (fino a +14 dB a 82 Hz, il "thump" di una 4x12 chiusa a volume)
