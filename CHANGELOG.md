@@ -2,7 +2,7 @@
 
 All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; every plugin shares the b-suite version, b-rig has its own.
 
-## Unreleased
+## 0.3.0 beta
 
 ### Added
 - b-comp, a compressor tuned for guitar, replaces b-tight: clean, opto, fet, squash and multi (three bands set up for guitar) styles, with a graph of the curve, the level and the gain reduction.
