@@ -1,6 +1,6 @@
 #!/bin/bash
 # Nuova release di b-rig (l'app e i plugin che il suo installer può aggiungere, tutti con la stessa versione):
-#   tools/release.sh 0.2.0
+#   tools/release.sh 0.4.1   (da main, con le pull request già unite)
 # Sul Mac, in locale: scrive la versione in VERSION.txt, compila app e plugin (Apple Silicon), lancia tutti i test e
 # crea l'installer (tools/installer/make-pkg.sh) dentro un'immagine disco con l'icona (make-dmg.sh). Se tutto passa
 # fa il commit, crea il tag b-rig-v<versione>, fa il push e pubblica la release come "Latest", con le note di
@@ -16,6 +16,7 @@ tag="b-rig-v$version"
 gh="$(command -v gh || echo "$HOME/.local/bin/gh")"
 [[ -x "$gh" ]] || { echo "serve GitHub CLI (gh) collegato al tuo account" >&2; exit 1; }
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null && { echo "il tag $tag esiste già" >&2; exit 1; }
+[[ "$(git branch --show-current)" == "main" ]] || { echo "le release partono da main: prima unisci la pull request e passa a main" >&2; exit 1; }
 [[ -z "$(git status --porcelain --untracked-files=no)" ]] || { echo "ci sono modifiche non salvate: fai prima il commit" >&2; exit 1; }
 git submodule update --init --recursive
 

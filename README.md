@@ -102,7 +102,9 @@ That builds the app (`build/b-rig/BRig_artefacts/Release/b-rig.app`), b-rig as a
 
 ## Releases
 
-One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (marked "beta" in its title for now). On a Mac, `tools/release.sh 0.4.0` sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
+Work follows the GitHub Flow: `main` is always the released state; every change gets a short-lived branch from `main` and a pull request into it, and the branch is deleted once merged. Releases are made from `main`.
+
+One product, one version: the app and the plugins its installer can add share the version in `VERSION.txt`, and each release is tagged `b-rig-v<version>` (marked "beta" in its title for now). On a Mac, `tools/release.sh 0.4.1` (on `main`) sets the version, builds and tests the app and every plugin, makes the installer and publishes the release.
 
 ## License
 
