@@ -31,9 +31,9 @@ fi
 printf '%s\n' "$version" > VERSION.txt
 
 # 2. build (Apple Silicon), test e installer
-cmake -S . -B build-release "${gen[@]}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+cmake -S . -B build-release ${gen[@]+"${gen[@]}"} -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
       -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_VERSION="$version"
-cmake --build build-release --target brig_release bsuite_tests "${jobs[@]}"
+cmake --build build-release --target brig_release bsuite_tests ${jobs[@]+"${jobs[@]}"}
 run_test () { (cd "$1" && "$2" > /dev/null) || { echo "test falliti: $1 (rilancia $2 da $1 per i dettagli)" >&2; exit 1; }; echo "test ok  $1"; }
 while read -r dir target; do
     target="${target%$'\r'}"
