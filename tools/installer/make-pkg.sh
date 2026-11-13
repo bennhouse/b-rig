@@ -1,9 +1,12 @@
 #!/bin/bash
 # Installer macOS di b-rig (.pkg): l'app in /Applications (sempre) e, a scelta, i plugin per la DAW in
-# /Library/Audio/Plug-Ins. La pagina "Tipo di installazione" si apre da sola con tre voci separate:
-#   b-rig                       l'app (sempre installata)
-#   Plugin formats              Audio Unit, VST3: valgono per tutti i plugin scelti
-#   Plugins for your DAW        la voce spunta o toglie tutti i plugin; sotto, i singoli plugin
+# /Library/Audio/Plug-Ins. La pagina "Tipo di installazione" si legge in due passi:
+#   b-rig                                l'app (sempre installata)
+#   Add the plugins for your DAW         1. vuoi anche i plugin? (spuntarla prende tutto, nei due formati)
+#       Format                           2. in che formato: Audio Unit, VST3 o entrambi
+#           Audio Unit / VST3
+#       Plugins                          solo se vuoi sceglierli uno per uno: grigi finché non c'è un formato
+#           b-drop ... b-synthesia
 # Per ogni plugin e formato c'è una scelta nascosta che si accende da sola quando sono accesi sia il plugin sia il
 # formato (espressione "selected" valutata dall'Installer a ogni clic).
 # Sfondo chiaro e scuro con il logotipo e i colori dei plugin (tools/installer/resources, generati da BSuiteLogo).
@@ -58,7 +61,7 @@ while read -r dir target; do
     desc="$(describe "$dir")"
     pluginLines+="<line choice=\"$dir\"/>"
     hiddenLines+="<line choice=\"$dir.au\"/><line choice=\"$dir.vst3\"/>"
-    choices+="<choice id=\"$dir\" title=\"$dir\" description=\"$desc\" start_selected=\"false\"/>"
+    choices+="<choice id=\"$dir\" title=\"$dir\" description=\"$desc\" start_selected=\"false\" enabled=\"choices['fmt.au'].selected || choices['fmt.vst3'].selected\"/>"
     # nascoste: si installano quando sono accesi il plugin e il formato
     choices+="<choice id=\"$dir.au\" title=\"$dir Audio Unit\" visible=\"false\" start_selected=\"false\" selected=\"choices['$dir'].selected &amp;&amp; choices['fmt.au'].selected\"><pkg-ref id=\"$id.au\"/></choice>"
     choices+="<choice id=\"$dir.vst3\" title=\"$dir VST3\" visible=\"false\" start_selected=\"false\" selected=\"choices['$dir'].selected &amp;&amp; choices['fmt.vst3'].selected\"><pkg-ref id=\"$id.vst3\"/></choice>"
@@ -80,15 +83,18 @@ cat > "$work/distribution.xml" <<XML
     <domains enable_localSystem="true"/>
     <choices-outline>
         <line choice="app"/>
-        <line choice="formats"><line choice="fmt.au"/><line choice="fmt.vst3"/></line>
-        <line choice="plugins">$pluginLines</line>
+        <line choice="addplugins">
+            <line choice="formats"><line choice="fmt.au"/><line choice="fmt.vst3"/></line>
+            <line choice="plugins">$pluginLines</line>
+        </line>
         $hiddenLines
     </choices-outline>
     <choice id="app" title="b-rig" description="The app: the whole chain in one window, with tuner, metronome and presets. Always installed, in Applications." enabled="false" start_selected="true"><pkg-ref id="com.bsuite.brig.app"/></choice>
-    <choice id="formats" title="Plugin formats" description="The formats of the plugins you pick below. They apply to all of them." start_selected="true"/>
-    <choice id="fmt.au" title="Audio Unit" description="For Logic Pro, GarageBand and the other Audio Unit hosts." start_selected="true"/>
-    <choice id="fmt.vst3" title="VST3" description="For Ableton Live, Reaper, Cubase, Studio One and the other VST3 hosts." start_selected="true"/>
-    <choice id="plugins" title="Plugins for your DAW" description="The same effects as separate plugins for your music software. Tick this line for all of them, or open it and tick the ones you want." start_selected="false"/>
+    <choice id="addplugins" title="Add the plugins for your DAW" description="Do you also want the effects as plugins for your music software? Tick this line for all of them, as Audio Unit and VST3. Open it to choose the format and, if you like, only some plugins." start_selected="false"/>
+    <choice id="formats" title="Format" description="Which format your music software uses. Pick at least one: the plugins below can only be chosen once a format is ticked." start_selected="false"/>
+    <choice id="fmt.au" title="Audio Unit" description="For Logic Pro, GarageBand and the other Audio Unit hosts." start_selected="false"/>
+    <choice id="fmt.vst3" title="VST3" description="For Ableton Live, Reaper, Cubase, Studio One and the other VST3 hosts." start_selected="false"/>
+    <choice id="plugins" title="Plugins" description="All the plugins, or open this line and tick only the ones you want. Choose a format above first." start_selected="false" enabled="choices['fmt.au'].selected || choices['fmt.vst3'].selected"/>
     $choices
     $refs
 </installer-gui-script>
@@ -107,7 +113,7 @@ cat > "$work/res/welcome.html" <<HTML
 <img src="$icon" width="72" height="72" alt="" style="float:left;margin:2px 18px 8px 0">
 <h1><b>b</b><span>-</span>rig $version</h1>
 <p>A guitar rig in one app: plug in the guitar and play through amp, cab and effects, with tuner, metronome and presets. No DAW needed.</p>
-<p>On the next pages you can also install <b>the plugins</b> for your DAW: first the formats (<b>Audio Unit</b>, <b>VST3</b> or both), then all the plugins or only the ones you want. The app is always installed.</p>
+<p>The app is always installed. On the <b>Installation Type</b> page you can also add <b>the plugins</b> for your DAW: tick <b>Add the plugins for your DAW</b> to get all of them, or open it, pick the <b>format</b> (Audio Unit, VST3 or both) and then the plugins you want.</p>
 <p class="dim">Beta. Free and open source under the GNU AGPLv3.</p>
 </body></html>
 HTML

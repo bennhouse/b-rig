@@ -10,7 +10,7 @@ All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; e
 - b-rig and plugins: `check for updates` in the about panel.
 - b-amp: `tone` for the `vol + eq` boost; oversampling `off` (now `off | 2x | 4x`; older projects keep their setting).
 - b-space: `mix`; floor reflection; materials filter the bounces and the tail; more low end with the amp near a wall.
-- Installer: plugin formats chosen once for all plugins, and `Plugins for your DAW` ticks all of them or one by one.
+- Installer: two steps on the Installation Type page: `Add the plugins for your DAW` (all of them), then inside it the format (Audio Unit, VST3) and, if you like, the plugins one by one; the plugins stay grey until a format is ticked.
 
 ### Changed
 - b-rig starts from `clean slate`, with no presets. `undo` and `redo` are text buttons like the presets screen. In the library a module already in the chain shows a dark `-` that removes it. `SAFE MUTED` only appears when the protection mutes b-amp, not when you switch it off. Deleted presets go to the Trash.

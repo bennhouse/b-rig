@@ -12,7 +12,7 @@ Its installer can also add **the same effects as plugins** for your DAW: you cho
 
 1. Download `b-rig-<version>-macos-arm64.dmg` from the [latest release](https://github.com/bennhouse/b-rig/releases/latest) (macOS 11 or later, Apple Silicon).
 2. Open it and double-click **Install b-rig**. The installer is not notarized yet, so the first time macOS blocks it: open **System Settings → Privacy & Security** and click **Open Anyway**, then open it again.
-3. On the **Installation Type** page b-rig is always selected. **Plugin formats** chooses **Audio Unit** (Logic Pro, GarageBand), **VST3** (Ableton Live, Reaper, Cubase…) or both, for every plugin. **Plugins for your DAW** ticks all the plugins at once; open it to tick only some. Leave it unticked for the app only.
+3. On the **Installation Type** page b-rig is always selected. Do you also want the plugins? Tick **Add the plugins for your DAW** for all of them, as Audio Unit and VST3. Open it to choose the **Format** (**Audio Unit** for Logic Pro and GarageBand, **VST3** for Ableton Live, Reaper, Cubase…, or both) and, under **Plugins**, only the ones you want: they stay grey until a format is ticked. Leave it unticked for the app only.
 4. b-rig includes no cab IRs. To hear b-amp, add b-blend after it and load your own IR files (`.wav`); until then b-amp stays muted. The app says this the first time it opens.
 
 The app goes to Applications, the plugins to `/Library/Audio/Plug-Ins`, where your DAW lists them under "b-suite". Run the installer again to add or remove plugins. A Windows version is in the works.
