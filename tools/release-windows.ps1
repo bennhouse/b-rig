@@ -1,4 +1,4 @@
-﻿﻿# Installer Windows di una release di b-rig, compilati su un PC Windows (al posto della GitHub Action):
+﻿# Installer Windows di una release di b-rig, compilati su un PC Windows (al posto della GitHub Action):
 #   powershell -ExecutionPolicy Bypass -File tools\release-windows.ps1 -Version 0.4.1
 # Prende il codice del tag b-rig-v<versione> (lo crea chi fa la release sul Mac con tools/release.sh), compila
 # dalla radice l'app, b-rig come plugin e tutti i plugin (brig_release) per x64 e ARM64, lancia tutti i test (solo
