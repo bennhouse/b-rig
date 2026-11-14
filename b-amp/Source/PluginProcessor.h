@@ -63,7 +63,12 @@ public:
     // tuner: DI < 500 Hz decimata 8x in un FIFO; mute mentre si accorda
     static constexpr int kTunerFifo = 1 << 14;
     juce::AbstractFifo tunerFifo { kTunerFifo };
-    std::array<float, kTunerFifo> tunerBuf {};
+private:
+    // 64 KB nell'heap, non dentro il processore: chi lo crea sullo stack (i test, b-rig) non lo riempie. Allocato
+    // una volta qui (azzerato) e mai sostituito: il thread audio ci scrive e l'interfaccia ci legge.
+    const std::unique_ptr<std::array<float, kTunerFifo>> tunerMem = std::make_unique<std::array<float, kTunerFifo>>();
+public:
+    std::array<float, kTunerFifo>& tunerBuf = *tunerMem;
     std::atomic<bool> tunerMute { false };
     double tunerRate() const noexcept { return fs / 8.0; }
     // tone stack per il grafico/test
@@ -123,3 +128,5 @@ private:
     // cathode follower prima del tone stack (crunch, lead) e finale push-pull con trasformatore d'uscita
     amp::DcBlock cfDc, paDc; amp::Tpt1 otLow; sp::Bq voiceEq; float paAsym = 0.06f;
 };
+// tunerBuf è un riferimento alla memoria di tunerMem: una copia punterebbe al buffer dell'originale
+static_assert (! std::is_copy_constructible_v<BAmpProcessor> && ! std::is_move_constructible_v<BAmpProcessor>);

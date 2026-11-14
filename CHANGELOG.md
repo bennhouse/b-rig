@@ -2,6 +2,17 @@
 
 All notable changes to b-suite and b-rig. Versions follow `MAJOR.MINOR.PATCH`; every plugin shares the b-suite version, b-rig has its own.
 
+## 0.4.2 beta
+
+### Added
+- Windows: one setup per architecture (x64, ARM64) with the same three choices as the macOS installer: b-rig standalone, b-rig plugin and b-suite plugins (VST3). `tools/release-windows.ps1 -Version <x.y.z>` builds it from the release tag and adds it to the release.
+
+### Fixed
+- Windows: the b-rig tests crashed at start (stack overflow: Windows gives 1 MB of stack, macOS 8 MB). The tuner buffer of b-rig and b-amp (64 KB) now lives on the heap, so the engine is 1.4 KB instead of 67 KB and is safe on any stack, including a DAW's threads; a test checks it. All the tests pass on Windows x64.
+- Windows: building with Visual Studio and `--parallel` could take 60 GB of RAM (one compiler per core in every project, times one project per core); `/MP` is now capped and the scripts use `--parallel 4`.
+- An existing build folder kept the old version after `VERSION.txt` changed.
+- Windows release script and GitHub Action: they still passed the old `BRIG_VERSION`, built the app alone and stopped with a parse error when a tool was missing; the separate b-suite installer and workflow (no longer released, and listing a plugin that does not exist) are removed.
+
 ## 0.4.1 beta
 
 ### Added

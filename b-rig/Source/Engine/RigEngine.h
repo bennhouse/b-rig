@@ -155,7 +155,13 @@ public:
     std::atomic<bool> tunerMutes { true };   // il tuner muta l'uscita quando si accende (scelta dell'utente, tenuta tra le sessioni)
     static constexpr int kTunerFifo = 1 << 14;
     juce::AbstractFifo tunerFifo { kTunerFifo };
-    std::array<float, kTunerFifo> tunerBuf {};
+private:
+    // 64 KB nell'heap, non dentro l'oggetto: un RigEngine creato sullo stack (test, o un thread della DAW con poco
+    // stack) non lo riempie. Allocato una volta qui (azzerato) e mai sostituito: il thread audio ci scrive e
+    // l'interfaccia ci legge, quindi la memoria non deve mai cambiare finché l'engine esiste.
+    const std::unique_ptr<std::array<float, kTunerFifo>> tunerMem = std::make_unique<std::array<float, kTunerFifo>>();
+public:
+    std::array<float, kTunerFifo>& tunerBuf = *tunerMem;
     double tunerRate() const noexcept { return fs / 4.0; }
 
 
@@ -220,4 +226,6 @@ private:
     Lp tunerLp1, tunerLp2;
     int tunerDecim = 0;
 };
+// tunerBuf è un riferimento alla memoria di tunerMem: una copia punterebbe al buffer dell'originale
+static_assert (! std::is_copy_constructible_v<RigEngine> && ! std::is_move_constructible_v<RigEngine>);
 }

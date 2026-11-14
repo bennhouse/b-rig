@@ -1,12 +1,12 @@
-# Working on b-suite from Windows
+# Working on b-rig from Windows
 
-Everything you need to build, test and fix the plugins and b-rig on a Windows PC, and to make the Windows installers for a release.
+Everything you need to build, test and fix b-rig and the plugins on a Windows PC, and to make the Windows installers for a release.
 
 ## 1. Install the tools (once)
 
 1. **Visual Studio 2022** (Community is free) or **Build Tools for Visual Studio 2022**. In the installer choose the workload **Desktop development with C++**, and under *Individual components* add:
-   - **MSVC v143 - VS 2022 C++ ARM64/ARM64EC build tools** (for the ARM64 installers),
-   - **C++ CMake tools for Windows** (gives you CMake; or install CMake from cmake.org).
+   - **MSVC v143 - VS 2022 C++ ARM64/ARM64EC build tools** (for the ARM64 installer),
+   - **C++ CMake tools for Windows** (gives you CMake and Ninja; or install CMake from cmake.org).
 2. **Git for Windows**: https://git-scm.com/download/win
 3. **Inno Setup 6** (makes the setup .exe): https://jrsoftware.org/isdl.php
 4. **GitHub CLI**: https://cli.github.com, then sign in once:
@@ -22,41 +22,48 @@ Open a new **Developer PowerShell for VS 2022** after installing, so everything 
 You need write access to the repository (the owner invites you as a collaborator; accept the e-mail from GitHub).
 
 ```powershell
-git clone --recursive https://github.com/bennhouse/b-suite.git
-cd b-suite
+git clone --recursive https://github.com/bennhouse/b-rig.git
+cd b-rig
 ```
 
 `--recursive` also downloads JUCE (the `libs/JUCE` submodule). If you forgot it: `git submodule update --init --recursive`.
 
 ## 3. Build and test
 
-One plugin, from its folder:
+Everything at once (the app, b-rig as a plugin, every plugin and all the test programs), from the repository root. Ninja is the fastest and keeps one compiler per job:
 
 ```powershell
-cd b-verb
-cmake -S . -B build -A x64
-cmake --build build --config Release --parallel
-.\build\BVerbTests_artefacts\Release\BVerbTests.exe
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_LTO=OFF
+cmake --build build --target brig_release bsuite_tests
 ```
 
-The test program measures the sound and saves screenshots of the interface in `build\`. The VST3 is in `build\BVerb_artefacts\Release\VST3\` and is also copied to `C:\Program Files\Common Files\VST3` after the build (run the shell as administrator for that, or add `-DBSUITE_COPY_AFTER_BUILD=OFF`).
-
-All the plugins at once, from the repository root:
+With the Visual Studio generator instead (no Developer PowerShell needed), always give `--parallel` a number:
 
 ```powershell
 cmake -S . -B build -A x64 -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_LTO=OFF
-cmake --build build --config Release --parallel --target bsuite_plugins bsuite_tests
+cmake --build build --config Release --parallel 4 --target brig_release bsuite_tests
 ```
 
-b-rig:
+Each Visual Studio project compiles several files at once (`/MP`, capped in `shared/cmake/Suite.cmake`), and `--parallel` without a number also builds one project per core at the same time: on a 16-core PC that was up to 256 compilers and 60 GB of RAM.
+
+Run the tests from each folder (they save screenshots of the interface in `<folder>\build\`):
 
 ```powershell
-cmake -S b-rig -B b-rig\build -A x64
-cmake --build b-rig\build --config Release --parallel --target BRig BRigTests
-cd b-rig; .\build\BRigTests_artefacts\Release\BRigTests.exe
+cd b-rig;  ..\build\b-rig\BRigTests_artefacts\Release\BRigTests.exe;  cd ..
+cd b-verb; ..\build\b-verb\BVerbTests_artefacts\Release\BVerbTests.exe; cd ..
 ```
 
+What you get:
+
+- the app: `build\b-rig\BRig_artefacts\Release\b-rig.exe`
+- b-rig as a plugin: `build\b-rig\BRigPlugin_artefacts\Release\VST3\b-rig.vst3`
+- each plugin: `build\<plugin>\<Target>_artefacts\Release\VST3\<plugin>.vst3`
+
+Without `-DBSUITE_COPY_AFTER_BUILD=OFF` the VST3s are also copied to `C:\Program Files\Common Files\VST3` after the build (run the shell as administrator for that). One plugin can also be built on its own from its folder (`cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`).
+
 For ARM64 use `-A ARM64` (it builds on an x64 PC, but the test programs only run on an ARM64 machine).
+
+The version comes from `VERSION.txt`; an existing build folder follows it when it changes.
 
 ## 4. Fixing things
 
@@ -76,18 +83,19 @@ For ARM64 use `-A ARM64` (it builds on an x64 PC, but the test programs only run
 
 ## 5. Windows installers for a release
 
-The release is started on a Mac with `tools/release.sh b-suite 0.2.0` (or `b-rig 0.2.0`): it builds and tests the macOS version, creates the tag `b-suite-v0.2.0` and the release with the macOS installer. Then, on Windows:
+The release is started on a Mac with `tools/release.sh 0.4.1`: it builds and tests the macOS version, creates the tag `b-rig-v0.4.1` and the release with the macOS installer. Then, on Windows:
 
 ```powershell
 git switch main; git pull
-powershell -ExecutionPolicy Bypass -File tools\release-windows.ps1 -Product b-suite -Version 0.2.0
+powershell -ExecutionPolicy Bypass -File tools\release-windows.ps1 -Version 0.4.1
 ```
 
-The script checks out the code of that tag, builds x64 and ARM64, runs the tests on x64, makes the two setup files with Inno Setup and uploads them to the release. It goes back to your branch at the end. Options:
+The script checks out the code of that tag, builds the app, b-rig as a plugin and every plugin for x64 and ARM64, runs all the tests on x64, makes one setup per architecture with Inno Setup (`b-rig\Installer\b-rig.iss`) and uploads them to the release. It goes back to your branch at the end. The setup has the same three choices as the macOS installer: **b-rig standalone** (the app, in `C:\Program Files\b-suite\b-rig`), **b-rig plugin** and **b-suite plugins** (VST3, in `C:\Program Files\Common Files\VST3\b-suite`). Options:
 
 - `-NoUpload`: stop at the files in `dist\` (to try them first).
 - `-Arch x64` or `-Arch ARM64`: one architecture only.
+- `-Ref <branch or commit>`: build that instead of the tag, to try the installer before a release (never uploads).
 
-Try the setup on your PC before uploading if something changed in the installer (`tools\installer\b-suite.iss`, `b-rig\Installer\b-rig.iss`).
+Try the setup on your PC before uploading if something changed in the installer.
 
-Later the same job can run on GitHub instead (`.github/workflows/b-suite.yml` and `b-rig.yml`): set the repository variable `WINDOWS_CI` to `true` (Settings > Secrets and variables > Actions > Variables) and the release tag builds the Windows installers by itself.
+Later the same job can run on GitHub instead (`.github/workflows/b-rig.yml`): set the repository variable `WINDOWS_CI` to `true` (Settings > Secrets and variables > Actions > Variables) and the release tag builds the Windows installers by itself.

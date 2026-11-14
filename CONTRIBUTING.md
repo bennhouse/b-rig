@@ -5,7 +5,7 @@ Thanks for helping. b-suite is free software under the GNU AGPLv3; by contributi
 ## Getting the code
 
 ```bash
-git clone --recursive https://github.com/bennhouse/b-suite.git
+git clone --recursive https://github.com/bennhouse/b-rig.git
 ```
 
 JUCE is a submodule in `libs/JUCE`; if you cloned without `--recursive`, run `git submodule update --init --recursive`.
@@ -45,4 +45,4 @@ The tests measure the sound (levels, timing, decay, CPU) and save screenshots of
 
 ## Releases
 
-Maintainers publish with `tools/release.sh <version>` on a Mac; see the README. Windows releases are being reworked.
+Maintainers publish with `tools/release.sh <version>` on a Mac; see the README. The Windows installers are added to the same release from a Windows PC with `tools/release-windows.ps1 -Version <version>`: see [docs/WINDOWS.md](docs/WINDOWS.md).
