@@ -1,4 +1,4 @@
-# b-rig su Windows: build, test (x64) e installer per x64 e ARM64.
+# b-rig su Windows: build (app, b-rig plugin, plugin della suite), test (x64) e installer per x64 e ARM64.
 #   - avvio manuale (Actions > b-rig > Run workflow): installer come artifact del run
 #   - tag b-rig-vX.Y.Z: gli installer Windows si aggiungono alla release
 # macOS si compila e si testa in locale: tools/release.sh fa la build, i test e il .dmg sul Mac, crea il tag e la
@@ -18,9 +18,6 @@ concurrency:
   group: b-rig-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DEFAULT_VERSION: "0.1.0"
-
 jobs:
   windows:
     name: Windows ${{ matrix.arch }}
@@ -31,7 +28,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        shell: bash   # PowerShell spezzerebbe -DBRIG_VERSION=0.1.0 sul punto
+        shell: bash   # PowerShell spezzerebbe -DBSUITE_VERSION=0.1.0 sul punto
     strategy:
       fail-fast: false
       matrix:
@@ -51,22 +48,32 @@ jobs:
         shell: bash
         run: |
           v="${GITHUB_REF_NAME#b-rig-v}"
-          [[ "$GITHUB_REF" == refs/tags/b-rig-v* ]] || v="$DEFAULT_VERSION"
+          [[ "$GITHUB_REF" == refs/tags/b-rig-v* ]] || v="$(head -n1 VERSION.txt | tr -d '\r')"
           echo "VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Configure
-        run: cmake -S b-rig -B b-rig/build -A ${{ matrix.cmake_arch }} -DBRIG_VERSION=${{ env.VERSION }}
+        run: cmake -S . -B build -A ${{ matrix.cmake_arch }} -DBSUITE_COPY_AFTER_BUILD=OFF -DBSUITE_LTO=OFF -DBSUITE_VERSION=${{ env.VERSION }}
 
+      # l'app, b-rig come plugin e tutti i plugin (brig_release); --parallel 4 con il /MP limitato di Suite.cmake
       - name: Build
         run: |
-          targets="BRig"
-          [[ "${{ matrix.test }}" == "true" ]] && targets="BRig BRigTests"
-          cmake --build b-rig/build --config Release --parallel --target $targets
+          targets="brig_release"
+          [[ "${{ matrix.test }}" == "true" ]] && targets="brig_release bsuite_tests"
+          cmake --build build --config Release --parallel 4 --target $targets
 
       - name: Test
         if: matrix.test
-        working-directory: b-rig
-        run: ./build/BRigTests_artefacts/Release/BRigTests.exe
+        run: |
+          while read -r dir target; do
+            target="${target%$'\r'}"
+            [[ -z "${dir:-}" || "$dir" == \#* ]] && continue
+            mkdir -p "$dir/build"
+            (cd "$dir" && "../build/$dir/${target}Tests_artefacts/Release/${target}Tests.exe" > /dev/null) || { echo "test falliti: $dir"; exit 1; }
+            echo "test ok  $dir"
+          done < tools/installer/plugins.txt
+          mkdir -p b-rig/build
+          (cd b-rig && ../build/b-rig/BRigTests_artefacts/Release/BRigTests.exe > /dev/null) || { echo "test falliti: b-rig"; exit 1; }
+          echo "test ok  b-rig"
 
       - name: Installer
         shell: pwsh
@@ -75,8 +82,17 @@ jobs:
           if (-not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress
           }
-          & $iscc /DAppVersion=$env:VERSION /DArch=${{ matrix.arch }} `
-            "/DSourceExe=$env:GITHUB_WORKSPACE\b-rig\build\BRig_artefacts\Release\b-rig.exe" `
+          $stage = "build\stage"
+          New-Item -ItemType Directory "$stage\rig", "$stage\suite" | Out-Null
+          Copy-Item build\b-rig\BRig_artefacts\Release\b-rig.exe $stage
+          Copy-Item -Recurse build\b-rig\BRigPlugin_artefacts\Release\VST3\b-rig.vst3 "$stage\rig"
+          Get-Content tools\installer\plugins.txt | Where-Object { $_ -match '^b-' } | ForEach-Object {
+            $dir, $target = $_.Trim() -split '\s+'
+            Copy-Item -Recurse "build\$dir\${target}_artefacts\Release\VST3\$dir.vst3" "$stage\suite"
+          }
+          & $iscc /Q /DAppVersion=$env:VERSION /DArch=${{ matrix.arch }} `
+            "/DStageDir=$env:GITHUB_WORKSPACE\$stage" `
+            "/DIconFile=$env:GITHUB_WORKSPACE\build\b-rig\BRig_artefacts\JuceLibraryCode\icon.ico" `
             "/DOutputDir=$env:GITHUB_WORKSPACE\dist" b-rig\Installer\b-rig.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -109,5 +125,5 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#b-rig-v}"
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "b-rig $v beta" --prerelease --notes-file tools/installer/notes-b-rig.md
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "b-rig $v beta" --notes-file tools/installer/notes-b-rig.md
           gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber

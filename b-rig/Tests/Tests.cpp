@@ -56,6 +56,11 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI init;
 
+    // 0. engine e plugin piccoli: i buffer grandi stanno nell'heap. Questi test ne creano decine sullo stack, che su
+    //    Windows è di 1 MB (8 MB su macOS); nel plugin lo stack è quello della DAW.
+    check (sizeof (rig::RigEngine) < 8192, "RigEngine sta sullo stack (buffer grandi nell'heap), byte", (double) sizeof (rig::RigEngine));
+    check (sizeof (rig::RigPluginProcessor) < 8192, "RigPluginProcessor sta sullo stack, byte", (double) sizeof (rig::RigPluginProcessor));
+
     // 1. catena di default
     {
         rig::RigEngine e;
